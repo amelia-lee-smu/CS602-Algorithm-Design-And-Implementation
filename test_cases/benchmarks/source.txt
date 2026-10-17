@@ -1,0 +1,5 @@
+Sources for test cases from 
+https://galgos.inf.puc-rio.br/cvrplib/en/instances
+
+Set A, B, P: (Augerat et al., 1995)
+Set X: (Uchoa et al., 2017)
