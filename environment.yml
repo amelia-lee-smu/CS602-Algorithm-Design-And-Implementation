@@ -1,0 +1,7 @@
+name: algo-design
+channels:
+  - defaults
+dependencies:
+  - pandas
+  - ipykernel
+  - matplotlib

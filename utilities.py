@@ -31,7 +31,7 @@ def is_feasible(routes, cust_demands, vehicle_capacity, num_vehicles):
 
     return True
 
-def calculate_total_cost(routes, dist_matrix):
+def calculate_cost(routes, dist_matrix):
     '''Calculates the total costs based on the routes and distance matrix.'''
     total_cost = 0
 
