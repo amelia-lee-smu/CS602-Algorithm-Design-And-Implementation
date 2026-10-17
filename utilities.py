@@ -94,3 +94,17 @@ def score(opt, cost, sml, t, verbose=False):
         print('cost term: ', cost_term)
         print('combined term: ', combined_term)
     return time_term, cost_term, combined_term, 1 / combined_term
+
+
+# Instance size classes. The spec gives the time limits but not what counts as
+# small/medium/large, so the customer-count thresholds below are a GUESS:
+# update them once the course defines the sizes.
+TIME_LIMITS = {'small': 30, 'medium': 60, 'large': 180}
+
+def size_class(num_customers):
+    '''Returns "small", "medium" or "large" for an instance with this many customers (depot excluded).'''
+    if num_customers < 180:
+        return 'small'
+    if num_customers < 450:
+        return 'medium'
+    return 'large'
