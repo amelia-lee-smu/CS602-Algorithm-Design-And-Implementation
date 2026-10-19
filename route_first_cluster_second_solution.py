@@ -96,7 +96,7 @@ def partition_giant_route(tour, cust_demands, dist_matrix, vehicle_capacity):
     return best_routes
 
 
-def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num_giant_tours=25, seed=SEED):
+def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num_giant_tours=25, seed=SEED, time_limit=None):
     '''
     Implementation of the Route first, cluster second algorithm (Beasley, 1983).
     For each sample of giant tour:
@@ -131,10 +131,10 @@ def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num
     return (best_cost, best_routes)
 
 
-# run the algo
-cost, routes = run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles)
-feasibility_check = is_feasible(routes, cust_demands, vehicle_capacity, num_vehicles)
-print(cost)
-for route in routes:
-    print(" ".join(str(v) for v in route))
-print("feasible:", feasibility_check)
+# # run the algo
+# cost, routes = run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles)
+# feasibility_check = is_feasible(routes, cust_demands, vehicle_capacity, num_vehicles)
+# print(cost)
+# for route in routes:
+#     print(" ".join(str(v) for v in route))
+# print("feasible:", feasibility_check)
