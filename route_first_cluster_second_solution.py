@@ -1,4 +1,5 @@
 import random
+import time
 
 from utilities import *
 from optimisations import *
@@ -242,18 +243,46 @@ def fit_routes_to_vehicles(routes, cust_demands, dist_matrix, vehicle_capacity, 
     return [[0] + group + [0] for group in groups if group]
 
 
+def is_within_limits(routes, cust_demands, vehicle_capacity, num_vehicles):
+    '''
+    Quietly checks that there are at most num_vehicles routes and no route is over capacity.
+    '''
+    if len(routes) > num_vehicles:
+        return False
+    return all(sum(cust_demands[c] for c in route[1:-1]) <= vehicle_capacity for route in routes)
+
+
+def improve_between_routes(routes, local_search, cust_demands, vehicle_capacity, num_vehicles):
+    '''
+    Improves the routes with moves between routes (relocate, swap, 2-opt*) and inside routes (2-opt),
+    using PenalisedLocalSearch from optimisations.py.
+    Returns the improved routes, or the original routes if the result is not within the vehicle and capacity limits.
+    '''
+    improved = local_search.improve([route[1:-1] for route in routes])    # PenalisedLocalSearch uses routes without the depot
+    improved = [[0] + route + [0] for route in improved if route]
+
+    if is_within_limits(improved, cust_demands, vehicle_capacity, num_vehicles):
+        return improved
+    return routes
+
+
 def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num_giant_tours=25, seed=SEED, time_limit=None):
     '''
     Implementation of the Route first, cluster second algorithm (Beasley, 1983).
     For each sample of giant tour:
     (1) generate a random giant tour (excluding depot) and improve it with 2-opt
     (2) partition the giant tour into individual routes
-    (3) do 3-opt to optimize each individual route
+    (3) improve the routes with moves between routes (relocate, swap, 2-opt*)
+    (4) do 3-opt to optimize each individual route
     '''
     best_cost = INF                                     # replace when a lower cost is found
     best_routes = None                                  # replace when a better set of routes are found
     random_generator = random.Random(seed)                           # random generator with seed
     customers = list(range(1, len(cust_demands)))       # get the customer indexes without the depot
+
+    # local search between routes. it stops early once the deadline is reached (no deadline if time_limit is None)
+    deadline = time.perf_counter() + time_limit if time_limit else INF
+    local_search = PenalisedLocalSearch(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, deadline, seed=seed)
 
     for _ in range(num_giant_tours):
 
@@ -271,7 +300,10 @@ def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num
             if routes is None:
                 continue
 
-        # (3) 3-optimise each route
+        # (3) improve the routes with moves between routes
+        routes = improve_between_routes(routes, local_search, cust_demands, vehicle_capacity, num_vehicles)
+
+        # (4) 3-optimise each route
         routes = [cycle_to_route(three_opt(route[:-1], dist_matrix)) for route in routes]
 
         # store if the cost is lower
