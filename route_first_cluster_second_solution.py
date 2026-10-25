@@ -2,7 +2,7 @@ import random
 import time
 
 from utilities import *
-from optimisations import *
+from optimisations import two_opt, three_opt, new_search, improve
 from test_cases.sample_from_instructions import *
 
 SEED = 42
@@ -252,13 +252,13 @@ def is_within_limits(routes, cust_demands, vehicle_capacity, num_vehicles):
     return all(sum(cust_demands[c] for c in route[1:-1]) <= vehicle_capacity for route in routes)
 
 
-def improve_between_routes(routes, local_search, cust_demands, vehicle_capacity, num_vehicles):
+def improve_between_routes(routes, search, cust_demands, vehicle_capacity, num_vehicles):
     '''
     Improves the routes with moves between routes (relocate, swap, 2-opt*) and inside routes (2-opt),
-    using PenalisedLocalSearch from optimisations.py.
+    using the penalised local search (improve) from optimisations.py.
     Returns the improved routes, or the original routes if the result is not within the vehicle and capacity limits.
     '''
-    improved = local_search.improve([route[1:-1] for route in routes])    # PenalisedLocalSearch uses routes without the depot
+    improved = improve(search, [route[1:-1] for route in routes])          # optimisations.py uses routes without the depot
     improved = [[0] + route + [0] for route in improved if route]
 
     if is_within_limits(improved, cust_demands, vehicle_capacity, num_vehicles):
@@ -282,7 +282,7 @@ def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num
 
     # local search between routes. it stops early once the deadline is reached (no deadline if time_limit is None)
     deadline = time.perf_counter() + time_limit if time_limit else INF
-    local_search = PenalisedLocalSearch(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, deadline, seed=seed)
+    search = new_search(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, deadline, seed=seed)
 
     for _ in range(num_giant_tours):
 
@@ -301,7 +301,7 @@ def run_rfcs_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, num
                 continue
 
         # (3) improve the routes with moves between routes
-        routes = improve_between_routes(routes, local_search, cust_demands, vehicle_capacity, num_vehicles)
+        routes = improve_between_routes(routes, search, cust_demands, vehicle_capacity, num_vehicles)
 
         # (4) 3-optimise each route
         routes = [cycle_to_route(three_opt(route[:-1], dist_matrix)) for route in routes]

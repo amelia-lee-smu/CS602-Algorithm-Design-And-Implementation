@@ -1,14 +1,16 @@
 '''
 Clarke-Wright savings + penalised local search for CVRP.
 
-Pipeline:
+Pipeline (all steps are written out in run_cw_ls_algo below; the moves
+themselves are in optimisations.py):
   1. START      Build routes with the Clarke-Wright savings algorithm.
-  2. IMPROVE    PenalisedLocalSearch.improve() in optimisations.py:
-                  - cut the routes down to the number of vehicles
-                    (customers are re-inserted, vehicles may become overloaded)
-                  - local search (relocate / swap / 2-opt* / 2-opt) on
-                    "distance + penalty * overload", raising the penalty
-                    until no vehicle is overloaded
+  2. IMPROVE    Penalised local search:
+                  (a) reduce_routes: cut the routes down to the number of vehicles
+                      (customers are re-inserted, vehicles may become overloaded)
+                  (b) local_search (relocate / swap / 2-opt* / 2-opt) on
+                      "distance + penalty * overload"
+                  (c) no vehicle overloaded? done.
+                      otherwise double the penalty, fix_overload, back to (b)
   3. RESTART    Still infeasible and time left? Restart from a randomised
                 Clarke-Wright (each saving multiplied by a factor in [0.8, 1.2]).
   4. FINISH     Check feasibility with utilities.is_feasible and print.
@@ -22,14 +24,16 @@ import sys
 import time
 
 from utilities import read_instance, is_feasible, calculate_cost, size_class, TIME_LIMITS
-from optimisations import PenalisedLocalSearch
+from optimisations import (new_search, set_routes, snapshot, reduce_routes, local_search,
+                           fix_overload, overload, distance, num_routes, out_of_time, log)
 
 SEED = 42
 SAFETY = 0.8          # use 80% of the time limit, leaving room for reading input and printing
+MAX_ROUNDS = 30       # max rounds of "local search, then raise the penalty"
 
 
 # ------------------------------------------------------------------ construction
-def clarke_wright(cust_demands, dist_matrix, vehicle_capacity, rng=None, noise=0.0):
+def clarke_wright(cust_demands, dist_matrix, vehicle_capacity, rng=None, noise=0.0, lam=1.0):
     '''
     Clarke-Wright savings algorithm. Returns a list of routes, each a list of
     customers WITHOUT the depot. Ignores the vehicle limit (fixed later).
@@ -37,6 +41,9 @@ def clarke_wright(cust_demands, dist_matrix, vehicle_capacity, rng=None, noise=0
     rng, noise: optional. If given, every saving is multiplied by a random
     factor in [1 - noise, 1 + noise], giving a slightly different solution
     each call (used for restarts).
+    lam:        saving = d(0,i) + d(0,j) - lam * d(i,j). lam = 1 is the classic
+                saving; a larger lam favours joining customers that are close
+                to each other, a smaller one favours customers far from the depot.
     '''
     n = len(cust_demands)
 
@@ -45,11 +52,11 @@ def clarke_wright(cust_demands, dist_matrix, vehicle_capacity, rng=None, noise=0
     load = {c: cust_demands[c] for c in range(1, n)}    # route id -> total demand
     route_of = {c: c for c in range(1, n)}              # customer -> route id
 
-    # (2) saving of serving i and j on the same route: d(0,i) + d(0,j) - d(i,j)
+    # (2) saving of serving i and j on the same route: d(0,i) + d(0,j) - lam * d(i,j)
     savings = []
     for i in range(1, n):
         for j in range(i + 1, n):
-            s = dist_matrix[0][i] + dist_matrix[0][j] - dist_matrix[i][j]
+            s = dist_matrix[0][i] + dist_matrix[0][j] - lam * dist_matrix[i][j]
             if s > 0:
                 if rng is not None:
                     s *= rng.uniform(1 - noise, 1 + noise)
@@ -106,8 +113,8 @@ def run_cw_ls_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles,
         time_limit = time_budget(len(cust_demands) - 1)
     deadline = start + time_limit
 
-    ls = PenalisedLocalSearch(cust_demands, dist_matrix, vehicle_capacity, num_vehicles,
-                              deadline, seed=seed, verbose=verbose)
+    search = new_search(cust_demands, dist_matrix, vehicle_capacity, num_vehicles,
+                        deadline, seed=seed, verbose=verbose)
     rng = random.Random(seed)
 
     def feasible(routes):
@@ -116,20 +123,52 @@ def run_cw_ls_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles,
         return (len(routes) <= num_vehicles and
                 all(sum(cust_demands[c] for c in r) <= vehicle_capacity for r in routes))
 
-    # first attempt: plain Clarke-Wright
-    routes = ls.improve(clarke_wright(cust_demands, dist_matrix, vehicle_capacity))
-
-    # restart from a randomised Clarke-Wright while infeasible and time remains
     restarts = 0
-    while not feasible(routes) and not ls.out_of_time():
+    while True:
+        # (1) START: plain Clarke-Wright first, randomised Clarke-Wright on restarts
+        if restarts == 0:
+            start_routes = clarke_wright(cust_demands, dist_matrix, vehicle_capacity)
+        else:
+            start_routes = clarke_wright(cust_demands, dist_matrix, vehicle_capacity,
+                                         rng=rng, noise=0.2)
+        search['penalty'] = search['initial_penalty']
+        set_routes(search, start_routes)
+        best, best_cost = None, float('inf')        # best feasible routes of this attempt
+        if feasible(start_routes):
+            best, best_cost = snapshot(search), distance(search)
+        log(search, f'start: {num_routes(search)} routes, cost {distance(search):.1f}')
+
+        # (2a) too many routes: delete the lightest ones, re-insert their customers
+        reduce_routes(search)
+        log(search, f'after reduce_routes: {num_routes(search)} routes, '
+                    f'overload {overload(search)}, cost {distance(search):.1f}')
+
+        for rnd in range(MAX_ROUNDS):
+            # (2b) local search: relocate / swap / 2-opt* / 2-opt until no move helps
+            local_search(search)
+            log(search, f'round {rnd}: penalty {search["penalty"]:.3g}, '
+                        f'cost {distance(search):.1f}, overload {overload(search)}')
+
+            # (2c) feasible: done. overloaded: raise the penalty and repair, then search again
+            if overload(search) == 0:
+                if distance(search) < best_cost:
+                    best, best_cost = snapshot(search), distance(search)
+                break
+            if out_of_time(search):
+                break
+            search['penalty'] *= 2
+            fix_overload(search)
+
+        routes = best if best is not None else snapshot(search)
+
+        # (3) RESTART only if still infeasible and there is time left
+        if feasible(routes) or out_of_time(search):
+            break
         restarts += 1
-        ls.log(f'restart {restarts}')
-        start_routes = clarke_wright(cust_demands, dist_matrix, vehicle_capacity,
-                                     rng=rng, noise=0.2)
-        routes = ls.improve(start_routes)
+        log(search, f'restart {restarts}')
 
     routes = with_depot(routes)
-    ls.log(f'restarts: {restarts}, time {time.perf_counter() - start:.2f}s')
+    log(search, f'restarts: {restarts}, time {time.perf_counter() - start:.2f}s')
     return calculate_cost(routes, dist_matrix), routes
 
 
