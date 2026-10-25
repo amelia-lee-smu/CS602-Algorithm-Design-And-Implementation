@@ -1,0 +1,3 @@
+run_id,instance,instance_type,num_customers,num_vehicles,time_s,cost,optimal_cost,gap_pct,feasible,score
+2026-10-26_03-09-54,A-n32-k5,small,31,5,8.22,784.00,784,0.00,yes,1.000
+2026-10-26_03-09-54,X-n979-k58,large,978,58,8.14,122146.00,118976,2.66,yes,0.987

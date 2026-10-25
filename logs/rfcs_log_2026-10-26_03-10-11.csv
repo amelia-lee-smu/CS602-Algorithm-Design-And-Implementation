@@ -1,0 +1,91 @@
+instance,instance_type,time_s,step_time_s,iteration,step,cost,best_cost,new_best,routes,detail
+X-n101-k25,small,0.005,0.005,0,start,,,,,"seed 42, 100 customers, 25 vehicles, capacity 206, total demand 5147, tightness 0.999"
+X-n101-k25,small,0.007,0.002,1,giant_tour,8970.00,,,,
+X-n101-k25,small,0.109,0.103,1,repair_failed,,,,25/25,overload left 13 over 7 routes (heaviest route 210/206)
+X-n101-k25,small,0.112,0.002,2,giant_tour,8508.00,,,,
+X-n101-k25,small,0.213,0.102,2,repair_failed,,,,25/25,overload left 31 over 8 routes (heaviest route 217/206)
+X-n101-k25,small,0.216,0.002,3,giant_tour,9025.00,,,,
+X-n101-k25,small,0.332,0.117,3,repair_failed,,,,25/25,overload left 20 over 7 routes (heaviest route 210/206)
+X-n101-k25,small,0.335,0.003,4,giant_tour,8637.00,,,,
+X-n101-k25,small,0.429,0.094,4,repair_failed,,,,25/25,overload left 31 over 8 routes (heaviest route 219/206)
+X-n101-k25,small,0.431,0.003,5,giant_tour,8417.00,,,,
+X-n101-k25,small,0.500,0.069,5,repair_failed,,,,25/25,overload left 18 over 12 routes (heaviest route 211/206)
+X-n101-k25,small,0.503,0.003,6,giant_tour,8643.00,,,,
+X-n101-k25,small,0.590,0.087,6,repair_failed,,,,25/25,overload left 16 over 11 routes (heaviest route 210/206)
+X-n101-k25,small,0.593,0.004,7,giant_tour,8613.00,,,,
+X-n101-k25,small,0.669,0.076,7,repair_failed,,,,25/25,overload left 24 over 9 routes (heaviest route 215/206)
+X-n101-k25,small,0.671,0.002,8,giant_tour,8945.00,,,,
+X-n101-k25,small,0.752,0.081,8,repair_failed,,,,25/25,overload left 50 over 11 routes (heaviest route 219/206)
+X-n101-k25,small,0.755,0.003,9,giant_tour,8718.00,,,,
+X-n101-k25,small,0.849,0.093,9,repair_failed,,,,25/25,overload left 14 over 5 routes (heaviest route 215/206)
+X-n101-k25,small,0.852,0.003,10,giant_tour,9039.00,,,,
+X-n101-k25,small,0.949,0.097,10,repair_failed,,,,25/25,overload left 30 over 8 routes (heaviest route 222/206)
+X-n101-k25,small,0.952,0.003,11,giant_tour,8507.00,,,,
+X-n101-k25,small,1.046,0.093,11,repair_failed,,,,25/25,overload left 18 over 6 routes (heaviest route 212/206)
+X-n101-k25,small,1.048,0.003,12,giant_tour,9033.00,,,,
+X-n101-k25,small,1.109,0.061,12,repair_failed,,,,25/25,overload left 20 over 8 routes (heaviest route 212/206)
+X-n101-k25,small,1.111,0.002,13,giant_tour,8633.00,,,,
+X-n101-k25,small,1.188,0.077,13,repair_failed,,,,25/25,overload left 9 over 8 routes (heaviest route 208/206)
+X-n101-k25,small,1.191,0.003,14,giant_tour,8898.00,,,,
+X-n101-k25,small,1.293,0.102,14,repair_failed,,,,25/25,overload left 33 over 7 routes (heaviest route 224/206)
+X-n101-k25,small,1.296,0.003,15,giant_tour,8766.00,,,,
+X-n101-k25,small,1.371,0.075,15,repair_failed,,,,25/25,overload left 12 over 10 routes (heaviest route 208/206)
+X-n101-k25,small,1.373,0.002,16,giant_tour,8235.00,,,,
+X-n101-k25,small,1.461,0.088,16,repair_failed,,,,25/25,overload left 10 over 7 routes (heaviest route 209/206)
+X-n101-k25,small,1.463,0.002,17,giant_tour,8932.00,,,,
+X-n101-k25,small,1.537,0.074,17,repair_failed,,,,25/25,overload left 13 over 7 routes (heaviest route 211/206)
+X-n101-k25,small,1.540,0.003,18,giant_tour,8180.00,,,,
+X-n101-k25,small,1.640,0.100,18,repair_failed,,,,25/25,overload left 11 over 7 routes (heaviest route 208/206)
+X-n101-k25,small,1.642,0.002,19,giant_tour,8947.00,,,,
+X-n101-k25,small,1.721,0.079,19,repair_failed,,,,25/25,overload left 18 over 11 routes (heaviest route 210/206)
+X-n101-k25,small,1.724,0.002,20,giant_tour,9200.00,,,,
+X-n101-k25,small,1.808,0.085,20,repair_failed,,,,25/25,overload left 21 over 10 routes (heaviest route 213/206)
+X-n101-k25,small,1.810,0.002,21,giant_tour,8425.00,,,,
+X-n101-k25,small,1.872,0.062,21,repair_failed,,,,25/25,overload left 20 over 7 routes (heaviest route 217/206)
+X-n101-k25,small,1.874,0.002,22,giant_tour,8702.00,,,,
+X-n101-k25,small,1.971,0.097,22,repair_failed,,,,25/25,overload left 20 over 10 routes (heaviest route 211/206)
+X-n101-k25,small,1.974,0.003,23,giant_tour,8537.00,,,,
+X-n101-k25,small,2.072,0.098,23,repair_failed,,,,25/25,overload left 21 over 9 routes (heaviest route 211/206)
+X-n101-k25,small,2.076,0.005,24,giant_tour,8110.00,,,,
+X-n101-k25,small,2.175,0.099,24,repair_failed,,,,25/25,overload left 13 over 8 routes (heaviest route 209/206)
+X-n101-k25,small,2.177,0.002,25,giant_tour,8517.00,,,,
+X-n101-k25,small,2.233,0.056,25,repair_failed,,,,25/25,overload left 26 over 12 routes (heaviest route 214/206)
+X-n101-k25,small,2.235,0.002,26,giant_tour,7893.00,,,,
+X-n101-k25,small,2.321,0.085,26,repair_failed,,,,25/25,overload left 15 over 7 routes (heaviest route 210/206)
+X-n101-k25,small,2.323,0.003,27,giant_tour,8183.00,,,,
+X-n101-k25,small,2.413,0.089,27,repair_failed,,,,25/25,overload left 22 over 7 routes (heaviest route 221/206)
+X-n101-k25,small,2.415,0.002,28,giant_tour,9009.00,,,,
+X-n101-k25,small,2.491,0.076,28,repair_failed,,,,25/25,overload left 33 over 7 routes (heaviest route 219/206)
+X-n101-k25,small,2.494,0.002,29,giant_tour,9258.00,,,,
+X-n101-k25,small,2.570,0.077,29,repair_failed,,,,25/25,overload left 31 over 10 routes (heaviest route 216/206)
+X-n101-k25,small,2.573,0.002,30,giant_tour,8327.00,,,,
+X-n101-k25,small,2.668,0.095,30,repair_failed,,,,25/25,overload left 18 over 7 routes (heaviest route 214/206)
+X-n101-k25,small,2.670,0.002,31,giant_tour,8682.00,,,,
+X-n101-k25,small,2.753,0.083,31,repair_failed,,,,25/25,overload left 30 over 9 routes (heaviest route 219/206)
+X-n101-k25,small,2.755,0.002,32,giant_tour,8884.00,,,,
+X-n101-k25,small,2.822,0.067,32,repair_failed,,,,25/25,overload left 25 over 12 routes (heaviest route 216/206)
+X-n101-k25,small,2.824,0.002,33,giant_tour,8074.00,,,,
+X-n101-k25,small,2.902,0.078,33,repair_failed,,,,25/25,overload left 17 over 8 routes (heaviest route 210/206)
+X-n101-k25,small,2.904,0.002,34,giant_tour,9284.00,,,,
+X-n101-k25,small,2.966,0.062,34,repair_failed,,,,25/25,overload left 31 over 4 routes (heaviest route 234/206)
+X-n101-k25,small,2.967,0.002,35,giant_tour,8193.00,,,,
+X-n101-k25,small,3.036,0.069,35,repair_failed,,,,25/25,overload left 18 over 7 routes (heaviest route 212/206)
+X-n101-k25,small,3.039,0.003,36,giant_tour,9008.00,,,,
+X-n101-k25,small,3.110,0.071,36,repair_failed,,,,25/25,overload left 19 over 8 routes (heaviest route 211/206)
+X-n101-k25,small,3.113,0.003,37,giant_tour,8890.00,,,,
+X-n101-k25,small,3.196,0.083,37,repair_failed,,,,25/25,overload left 19 over 8 routes (heaviest route 210/206)
+X-n101-k25,small,3.198,0.002,38,giant_tour,7748.00,,,,
+X-n101-k25,small,3.292,0.094,38,repair_failed,,,,25/25,overload left 15 over 8 routes (heaviest route 210/206)
+X-n101-k25,small,3.295,0.003,39,giant_tour,8206.00,,,,
+X-n101-k25,small,3.385,0.090,39,repair_failed,,,,25/25,overload left 21 over 7 routes (heaviest route 219/206)
+X-n101-k25,small,3.388,0.003,40,giant_tour,8519.00,,,,
+X-n101-k25,small,3.474,0.086,40,repair_failed,,,,25/25,overload left 12 over 6 routes (heaviest route 210/206)
+X-n101-k25,small,3.476,0.002,41,giant_tour,8660.00,,,,
+X-n101-k25,small,3.564,0.088,41,repair_failed,,,,25/25,overload left 11 over 7 routes (heaviest route 210/206)
+X-n101-k25,small,3.569,0.006,42,giant_tour,8321.00,,,,
+X-n101-k25,small,3.686,0.116,42,repair_failed,,,,25/25,overload left 41 over 9 routes (heaviest route 219/206)
+X-n101-k25,small,3.688,0.002,43,giant_tour,8623.00,,,,
+X-n101-k25,small,3.798,0.111,43,repair_failed,,,,25/25,overload left 15 over 9 routes (heaviest route 211/206)
+X-n101-k25,small,3.801,0.002,44,giant_tour,8259.00,,,,
+X-n101-k25,small,3.891,0.090,44,repair_failed,,,,25/25,overload left 12 over 7 routes (heaviest route 210/206)
+X-n101-k25,small,3.892,0.002,45,giant_tour,8597.00,,,,

@@ -130,7 +130,8 @@ def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_nei
     1. relocate_and_swap with the penalty, until no move lowers distance + penalty * overload
     2. If no route is over vehicle_cap, stop: the routes are feasible
     3. Otherwise double the penalty, so overload counts for more in the next round
-    Returns the feasible routes, or None if a route is still overloaded at the end
+    Returns (routes, repaired):
+        (feasible routes, True), or (the routes that are still overloaded, False) if the repair failed
     '''
     def has_overload(routes):
         for route in routes:
@@ -143,26 +144,29 @@ def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_nei
 
     # split_with_vehicle_overload may already return routes within capacity: no repair needed
     if not has_overload(routes):
-        return routes
+        return routes, True
 
     for _ in range(max_doublings + 1):
         routes = relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap,
                                    nearest_neighbours, rng, penalty)
         if not has_overload(routes):
-            return routes
+            return routes, True
         penalty *= 2    # local to this call: the caller's starting penalty is unchanged
 
-    return None
+    return routes, False    # still overloaded: returned so the caller can see by how much
 
 
 # TODO: unchecked
-def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng, penalty=None):
+def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng, penalty=None,
+                      customers_to_check=None):
     '''
     Moves customers between routes until no move lowers the cost:
     - relocate: move a customer next to one of its nearest neighbours on another route
     - swap: exchange a customer with one of its nearest neighbours on another route
     penalty=None: every route must stay within vehicle_cap (normal improvement).
     penalty given: routes may be overloaded, and cost = distance + penalty * total overload (repair).
+    customers_to_check: only try moves for these customers (e.g. the ones ruin and recreate moved),
+    instead of every customer; much faster when only a small part of the solution changed.
     Returns the improved routes (a new list; empty routes are removed)
     '''
     routes = [list(route) for route in routes]      # copy, so the caller's routes are not changed
@@ -292,7 +296,10 @@ def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_ne
         return True
 
     # repeat passes over the customers, in a new random order each time, until a pass makes no move
-    customers = [customer for route in routes for customer in route[1:-1]]
+    if customers_to_check is None:
+        customers = [customer for route in routes for customer in route[1:-1]]
+    else:
+        customers = list(customers_to_check)
     improved = True
     while improved:
         improved = False
@@ -305,65 +312,116 @@ def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_ne
 
 
 # ---------------------------------------------------------------------------
-# Insertion
-# ---------------------------------------------------------------------------
-# TODO: not sure if needed
-def insertion_cost(route, position, customer, dist_matrix):
-    '''
-    Extra distance from inserting customer between route[position - 1] and route[position]:
-    d(prev, customer) + d(customer, next) - d(prev, next)
-    '''
-    pass
-
-
-# TODO: not sure if needed
-def cheapest_insertion(routes, loads, customer, cust_demands, dist_matrix, vehicle_cap):
-    '''
-    Find the cheapest position for customer in any route that still has room.
-    1. Skip routes where loads[r] + demand of customer > vehicle_cap
-    2. For every position in the remaining routes, compute insertion_cost
-    3. Insert customer at the cheapest position and update loads
-    Returns True if the customer was inserted, False if it fits in no route
-    '''
-    pass
-
-
-# ---------------------------------------------------------------------------
 # Ruin and recreate
 # ---------------------------------------------------------------------------
-# TODO: not sure if needed
+# TODO: unchecked
 def ruin(routes, nearest_neighbours, num_remove, rng):
     '''
-    Remove a group of customers that are close together.
-    1. Pick a random customer
-    2. Remove it and its nearest neighbours until num_remove customers are removed
-    3. Delete any route left with no customers
-    Returns (routes, removed customers)
+    Removes a group of customers that are close together:
+    a random customer, plus its nearest neighbours until num_remove customers are removed.
+    Routes left with no customers are dropped. The input routes are not changed.
+    Returns (ruined routes, removed customers)
     '''
-    pass
+    customers = [customer for route in routes for customer in route[1:-1]]
+    first_removed = rng.choice(customers)
+    removed = [first_removed, *nearest_neighbours[first_removed][:num_remove - 1]]
+
+    removed_set = set(removed)
+    ruined_routes = []
+    for route in routes:
+        kept_route = [stop for stop in route if stop not in removed_set]     # the depot (0) is never removed
+        if len(kept_route) > 2:
+            ruined_routes.append(kept_route)
+    return ruined_routes, removed
 
 
-# TODO: not sure if needed
-def recreate(routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicles, rng):
+# TODO: unchecked
+def recreate(routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng):
     '''
-    Put the removed customers back, one at a time.
-    1. Shuffle the removed customers, so each attempt rebuilds differently
-    2. For each customer, use cheapest_insertion
-    3. If it fits in no route and fewer than num_vehicles routes are used,
-       open a new route [0, customer, 0]
-    4. If it still cannot be placed, give up on this attempt
-    Returns the new routes, or None if a customer could not be placed
+    Puts the removed customers back one at a time (in random order), each at its cheapest spot
+    in a route that still has room:
+    1. first try the spots just before or after its nearest neighbours (fast, and usually the cheapest)
+    2. if none of those routes have room, try every spot in every route with room
+    3. if it still fits nowhere, open a new route [0, customer, 0] while vehicles are left
+    The routes are changed in place.
+    Returns the routes, or None if a customer could not be placed
     '''
-    pass
+    loads = [sum(cust_demands[customer] for customer in route) for route in routes]
+
+    # route_of[customer] = index of its route (-1 while it is not in a route), position_in_route = its index
+    route_of = [-1] * len(dist_matrix)
+    position_in_route = [0] * len(dist_matrix)
+
+    def index_route(route_index):
+        route = routes[route_index]
+        for position in range(1, len(route) - 1):
+            route_of[route[position]] = route_index
+            position_in_route[route[position]] = position
+
+    for route_index in range(len(routes)):
+        index_route(route_index)
+
+    def insertion_cost(route, position, distances_from_customer):
+        # extra distance from putting the customer between route[position - 1] and route[position]
+        previous_stop, next_stop = route[position - 1], route[position]
+        return (dist_matrix[previous_stop][customer] + distances_from_customer[next_stop]
+                - dist_matrix[previous_stop][next_stop])
+
+    insert_order = list(removed)
+    rng.shuffle(insert_order)       # a different order each time gives different rebuilds
+
+    for customer in insert_order:
+        demand = cust_demands[customer]
+        distances_from_customer = dist_matrix[customer]
+        best_cost, best_route_index, best_position = float("inf"), None, None
+
+        # 1. spots next to the nearest neighbours that are already in a route with room
+        for neighbour in nearest_neighbours[customer]:
+            route_index = route_of[neighbour]
+            if route_index < 0 or loads[route_index] + demand > vehicle_cap:
+                continue
+            route = routes[route_index]
+            neighbour_position = position_in_route[neighbour]
+            for position in (neighbour_position, neighbour_position + 1):
+                cost = insertion_cost(route, position, distances_from_customer)
+                if cost < best_cost:
+                    best_cost, best_route_index, best_position = cost, route_index, position
+
+        # 2. no neighbour's route has room: try every spot in every route with room
+        if best_route_index is None:
+            for route_index, route in enumerate(routes):
+                if loads[route_index] + demand > vehicle_cap:
+                    continue
+                for position in range(1, len(route)):
+                    cost = insertion_cost(route, position, distances_from_customer)
+                    if cost < best_cost:
+                        best_cost, best_route_index, best_position = cost, route_index, position
+
+        # 3. fits in no route: open a new one if a vehicle is free, otherwise give up
+        if best_route_index is None:
+            if len(routes) >= num_vehicles or demand > vehicle_cap:
+                return None
+            routes.append([0, customer, 0])
+            loads.append(demand)
+            index_route(len(routes) - 1)
+            continue
+
+        routes[best_route_index].insert(best_position, customer)
+        loads[best_route_index] += demand
+        index_route(best_route_index)
+
+    return routes
 
 
-# TODO: not sure if needed
+# TODO: unchecked
 def ruin_and_recreate(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
                       nearest_neighbours, num_remove, rng):
     '''
-    1. Copy routes, so the input solution is not changed
-    2. ruin the copy
-    3. recreate it
-    Returns the new routes, or None if recreate failed
+    Removes num_remove nearby customers from the routes and puts them back at their cheapest spots.
+    The input routes are not changed.
+    Returns (new routes, removed customers), or (None, removed customers) if a customer could not be placed
     '''
-    pass
+    ruined_routes, removed = ruin(routes, nearest_neighbours, num_remove, rng)
+    new_routes = recreate(ruined_routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
+                          nearest_neighbours, rng)
+    return new_routes, removed

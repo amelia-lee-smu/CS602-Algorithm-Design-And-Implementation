@@ -5,8 +5,9 @@ Route first, cluster second (Beasley, 1983), with modifications.
 import heapq
 import random
 
-from optimisations import optimised_two_opt, relocate_and_swap, repair_overloads, two_opt
-from utilities import calculate_cost, is_feasible, log_checkpoint, open_log
+from optimisations import optimised_two_opt, relocate_and_swap, repair_overloads, ruin_and_recreate, two_opt
+from utilities import calculate_cost, instance_infeasibility, is_feasible
+from utilities import failure_detail, log_checkpoint, open_log  # LOG
 
 
 # ---------------------------------------------------------------------------
@@ -20,6 +21,10 @@ SEED = 42                    # random seed, so every run can be reproduced
 
 MAX_OVERLOAD_FACTOR = 1.5    # split_with_vehicle_overload lets a route carry up to 1.5 x vehicle_cap
 MAX_PENALTY_DOUBLINGS = 5    # repair doubles the overload penalty at most 5 times before giving up
+
+MIN_REMOVE = 5               # ruin removes a random number of nearby customers,
+MAX_REMOVE = 30              # from MIN_REMOVE to min(MAX_REMOVE, num_customers // 4)
+NEW_TOUR_PROBABILITY = 0.0   # chance that an iteration builds a new giant tour instead of ruin and recreate
 
 def build_nearest_neighbours(dist_matrix, num_neighbours=NUM_NEIGHBOURS):
     '''
@@ -311,15 +316,21 @@ def split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap,
                                    nearest_neighbours, rng, penalty):
     '''
     Splits the tour allowing overloaded routes, then moves customers until nothing is overloaded.
-    Returns the routes, or None if there is no cut or the overload cannot be removed
+    Returns (routes, method, failed_routes):
+        (routes, "split_soft", None)                      if it worked
+        (None, "split_soft_no_cut", None)                 if there is no cut, even with overload allowed
+        (None, "repair_failed", still overloaded routes)  if the overload cannot be removed
     '''
     routes = split_with_vehicle_overload(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles, penalty)
     if routes is None:
-        return None     # no cut, even allowing routes up to MAX_OVERLOAD_FACTOR x vehicle_cap
+        return None, "split_soft_no_cut", None  # no cut, even allowing routes up to MAX_OVERLOAD_FACTOR x vehicle_cap
 
-    # move customers until nothing is overloaded (None if the overload cannot be removed)
-    return repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap,
-                            nearest_neighbours, rng, penalty, MAX_PENALTY_DOUBLINGS)
+    # move customers until nothing is overloaded
+    routes, repaired = repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap,
+                                        nearest_neighbours, rng, penalty, MAX_PENALTY_DOUBLINGS)
+    if not repaired:
+        return None, "repair_failed", routes
+    return routes, "split_soft", None
 
 # TODO: unchecked
 def partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
@@ -330,9 +341,13 @@ def partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap, num_vehic
     - if it finds no cut that fits within num_vehicles, uses split_with_overload_and_repair
     The routes are checked with is_feasible before they are returned, so returned routes are always feasible.
 
-    Returns (routes, method), where method indicates which approach was used:
-        (routes, "split"), (routes, "split_soft"), (None, "failed") if no feasible routes were found,
-        or (None, "infeasible") if the routes failed is_feasible (a bug, as both paths should give feasible routes)
+    Returns (routes, method, failed_routes). method says which approach worked, or why it failed:
+        (routes, "split", None) or (routes, "split_soft", None)   feasible routes
+        (None, "split_soft_no_cut", None)                         no cut, even with overload allowed
+        (None, "repair_failed", still overloaded routes)          the overload could not be removed
+        (None, "partition_infeasible", routes that broke a rule)  failed is_feasible (a bug: both paths
+                                                                  should give feasible routes)
+    failed_routes is only there so the log can say what went wrong; the solver does not use it.
     '''
     # 1. exact split: fast, no repair needed
     routes = split_within_vehicle_capacity(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles)
@@ -340,16 +355,15 @@ def partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap, num_vehic
 
     # 2. no cut fits: split with overload allowed, then repair
     if routes is None:
-        routes = split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
-                                                nearest_neighbours, rng, penalty)
-        method = "split_soft"
+        routes, method, failed_routes = split_with_overload_and_repair(
+            tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng, penalty)
+        if routes is None:
+            return None, method, failed_routes
 
     # 3. only feasible routes leave this function
-    if routes is None:
-        return None, "partitioning_failed"
     if not is_feasible(routes, cust_demands, vehicle_cap, num_vehicles):
-        return None, "partitioning_infeasible"
-    return routes, method
+        return None, "partition_infeasible", routes
+    return routes, method, None
 
 
 # ---------------------------------------------------------------------------
@@ -364,23 +378,25 @@ def checkpoint(routes, state, step):
        then save it to best["solution"] as one (cost, routes) write
     3. If logging is on (log is not None), write a row to the CSV log (log_checkpoint in utilities)
     state holds: cust_demands, dist_matrix, vehicle_cap, num_vehicles,
-    best, best_cost, iteration, log
+    best, best_cost, best_routes, iteration, log
     Returns the cost of routes
     '''
     # 1. recompute the cost from the routes, so it is exactly what the grader will check
     cost = calculate_cost(state["dist_matrix"], routes)
 
     # 2. save a new best: the cheap cost comparison first, so is_feasible only runs on improvements
-    new_best = False
+    new_best = False  # LOG
     if cost < state["best_cost"] and is_feasible(routes, state["cust_demands"], state["vehicle_cap"], state["num_vehicles"]):
-        state["best_cost"] = cost   # local copy, fast to compare against shared copy, what run_algo reads; one write, with copied routes so later steps cannot change it
-        state["best"]["solution"] = (cost, [route[:] for route in routes])
-        new_best = True
+        best_routes = [route[:] for route in routes]   # copy, so later steps cannot change the saved routes
+        state["best_cost"] = cost                       # local copy: fast to compare against
+        state["best_routes"] = best_routes              # local copy: what ruin and recreate starts from
+        state["best"]["solution"] = (cost, best_routes) # shared copy: what run_algo returns, in one write
+        new_best = True  # LOG
 
     # 3. log this step (skipped entirely when logging is off)
-    if state["log"] is not None:
-        log_checkpoint(state["log"], state["iteration"], step, cost, state["best_cost"],
-                       new_best, len(routes))
+    if state["log"] is not None:  # LOG
+        log_checkpoint(state["log"], state["iteration"], step, cost, state["best_cost"], new_best,  # LOG
+                       len(routes), state["num_vehicles"])  # LOG
 
     return cost
 
@@ -389,39 +405,53 @@ def checkpoint(routes, state, step):
 # Improvement steps
 # ---------------------------------------------------------------------------
 # TODO: unchecked
-def improve_between_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng):
+def improve_between_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
+                           customers_to_check=None):
     '''
     Moves and swaps customers between nearby routes, keeping every route within vehicle_cap.
+    customers_to_check: only try moves for these customers (None = every customer).
     Returns the improved routes (a new list; the input routes are not changed)
     '''
-    return relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng)
+    return relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
+                             customers_to_check=customers_to_check)
 
 # TODO: unchecked
-def improve_within_routes(routes, dist_matrix):
+def improve_within_routes(routes, dist_matrix, customers_to_check=None):
     '''
     Reorders the customers inside each route with plain 2-opt (loads do not change, so routes stay feasible).
     Plain 2-opt is used, not optimised_two_opt: routes are short, so trying every pair is faster
     and finds more improvements. The routes are changed in place.
+    customers_to_check: only 2-opt the routes that contain one of these customers (None = every route).
     Returns the improved routes
     '''
+    if customers_to_check is None:
+        for route in routes:
+            two_opt(route, dist_matrix)
+        return routes
+
+    changed_customers = set(customers_to_check)
     for route in routes:
-        two_opt(route, dist_matrix)
+        if not changed_customers.isdisjoint(route):     # this route holds a changed customer
+            two_opt(route, dist_matrix)
     return routes
 
 # TODO: unchecked
 def improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
-                            save_checkpoint):
+                            save_checkpoint, customers_to_check=None):
     '''
-    Improves feasible routes from partition_giant_tour:
+    Improves feasible routes (from partition_giant_tour, or from ruin and recreate):
     1. between routes: relocate and swap customers between nearby routes
     2. within routes: 2-opt on each route
+    customers_to_check: only work around these customers, e.g. the ones ruin and recreate moved
+    (None = the whole solution, used after partitioning a new giant tour).
     save_checkpoint(routes, step) is called after each step, so a new best is saved and logged.
     Returns the improved routes
     '''
-    routes = improve_between_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng)
+    routes = improve_between_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
+                                    customers_to_check)
     save_checkpoint(routes, "relocate_swap")
 
-    routes = improve_within_routes(routes, dist_matrix)
+    routes = improve_within_routes(routes, dist_matrix, customers_to_check)
     save_checkpoint(routes, "two_opt")
 
     return routes
@@ -438,10 +468,8 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_inf
     '''
 
     # Setup
-    # 1. CSV log, with the seed added to the details (None if logging is off)
-    if log_info is not None:
-        log_info = {**log_info, "seed": SEED}
-    log = open_log(log_info)
+    # 1. CSV log (None if logging is off)
+    log = open_log(log_info)  # LOG
 
     # 2. random number generator, so every run can be reproduced
     rng = random.Random(SEED)
@@ -455,8 +483,14 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_inf
     # 5. cost per unit of overload, for split_with_vehicle_overload and repair_overloads
     overload_penalty = starting_overload_penalty(cust_demands, dist_matrix)
 
-    # 6. everything checkpoint needs, in one dict that is updated in place
-    #    (best_cost and iteration change during the run)
+    # 6. how many customers ruin removes: a random number from min_remove to max_remove,
+    #    at most a quarter of the customers so small instances are not rebuilt from scratch
+    num_customers = len(cust_demands) - 1
+    max_remove = max(1, min(MAX_REMOVE, num_customers // 4))
+    min_remove = min(MIN_REMOVE, max_remove)
+
+    # 7. everything checkpoint needs, in one dict that is updated in place
+    #    (best_cost, best_routes and iteration change during the run)
     state = {
         "cust_demands": cust_demands,
         "dist_matrix": dist_matrix,
@@ -464,30 +498,67 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_inf
         "num_vehicles": num_vehicles,
         "best": best,
         "best_cost": best_cost,
+        "best_routes": best["solution"][1],     # Clarke-Wright's routes if it saved any, else None
         "iteration": 0,
-        "log": log,
+        "log": log,  # LOG
     }
 
     # checkpoint with state already filled in, so the improvement steps only pass (routes, step)
     def save_checkpoint(routes, step):
         return checkpoint(routes, state, step)
 
-    # Repeat until run_algo terminates the process, one new giant tour per iteration
+    # one log row for a step that checkpoint does not see (setup, giant tour, failures)
+    def log_row(step, cost=None, num_routes=None, detail=""):  # LOG
+        log_checkpoint(log, state["iteration"], step, cost, state["best_cost"], False,  # LOG
+                       num_routes, num_vehicles, detail)  # LOG
+
+    total_demand = sum(cust_demands)  # LOG
+    if log is not None: log_row("start", detail=(  # LOG
+        f"seed {SEED}, {num_customers} customers, {num_vehicles} vehicles, capacity {vehicle_cap}, "  # LOG
+        f"total demand {total_demand}, tightness {total_demand / (num_vehicles * vehicle_cap):.3f}"))  # LOG
+
+    # 8. stop straight away if no routes could ever be feasible, instead of looping until the time limit
+    impossible = instance_infeasibility(cust_demands, vehicle_cap, num_vehicles)
+    if impossible:
+        if log is not None: log_row("instance_infeasible", detail=impossible)  # LOG
+        return
+
+    # Repeat until run_algo terminates the process
     while True:
         state["iteration"] += 1
 
-        # 1. new randomised giant tour, improved with 2-opt
-        tour = build_giant_tour(dist_matrix, nearest_neighbours, rng)
+        # A. no feasible solution yet (or, rarely, for variety): build one from a new giant tour
+        if state["best_routes"] is None or rng.random() < NEW_TOUR_PROBABILITY:
+            # 1. new randomised giant tour, improved with 2-opt
+            tour = build_giant_tour(dist_matrix, nearest_neighbours, rng)
+            if log is not None: log_row("giant_tour", cost=calculate_cost(dist_matrix, [[0, *tour, 0]]))  # LOG
 
-        # 2. cut it into feasible routes
-        routes, method = partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
-                                              nearest_neighbours, rng, overload_penalty)
-        if routes is None:
-            continue    # this tour could not be made feasible, try a new one
+            # 2. cut it into feasible routes
+            routes, method, failed_routes = partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap,
+                                                                 num_vehicles, nearest_neighbours, rng,
+                                                                 overload_penalty)
+            if routes is None:
+                if log is not None: log_row(method, num_routes=len(failed_routes) if failed_routes else None,  # LOG
+                                            detail=failure_detail(method, failed_routes, cust_demands,  # LOG
+                                                                  vehicle_cap, num_vehicles))  # LOG
+                continue    # this tour could not be made feasible, try a new one
 
-        # 3. save the partition result if it is a new best (step = "split" or "split_soft")
-        save_checkpoint(routes, method)
+            # 3. save the partition result if it is a new best (step = "split" or "split_soft")
+            save_checkpoint(routes, method)
 
-        # 4. relocate/swap, then 2-opt on each route, saving any new best after each step
-        improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap,
-                                nearest_neighbours, rng, save_checkpoint)
+            # 4. relocate/swap, then 2-opt on each route, saving any new best after each step
+            improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap,
+                                    nearest_neighbours, rng, save_checkpoint)
+
+        # B. otherwise: ruin and recreate the best solution so far, then improve around the moved customers
+        else:
+            num_remove = rng.randint(min_remove, max_remove)
+            routes, removed = ruin_and_recreate(state["best_routes"], cust_demands, dist_matrix, vehicle_cap,
+                                                num_vehicles, nearest_neighbours, num_remove, rng)
+            if routes is None:
+                if log is not None: log_row("recreate_failed", detail=f"{num_remove} customers removed")  # LOG
+                continue    # a removed customer could not be put back, try again
+
+            save_checkpoint(routes, "ruin_recreate")
+            improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap,
+                                    nearest_neighbours, rng, save_checkpoint, customers_to_check=removed)
