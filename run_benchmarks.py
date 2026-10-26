@@ -14,16 +14,15 @@ Usage (from the project folder):
     python run_benchmarks.py --instances A-n32-k5 X-n101-k25  # chosen instances
     python run_benchmarks.py --limits 3 6 18                  # quick check with shorter limits
 
-Output (in logs/):
-    rfcs_log_<run_id>.csv     one row per solver step (columns: LOG_COLUMNS in solver_log.py)
-    summary_<run_id>.csv      one row per instance and time limit: cost, gap_pct, feasible, score
+Output (in logs/, written by test_case_logger.py):
+    rfcs_log_<run_id>.csv     one row per solver step (columns: LOG_COLUMNS in test_case_logger.py)
+    summary_<run_id>.csv      one row per instance and time limit (columns: SUMMARY_COLUMNS in test_case_logger.py)
 
 Instances that can never be solved (see instance_infeasibility) are skipped: the solver is not run,
 and the log gets one "instance_infeasible" row saying why.
 '''
 
 import argparse
-import csv
 import multiprocessing
 import os
 import time
@@ -31,14 +30,10 @@ from datetime import datetime
 from pathlib import Path
 
 import final_solution
-import solver_log
-from utilities import calculate_cost, is_feasible
+import test_case_logger
 
 BENCHMARK_DIR = Path(__file__).parent / "test_cases" / "benchmarks"
 LOG_DIR = Path(__file__).parent / "logs"
-
-SUMMARY_COLUMNS = ["run_id", "instance", "num_customers", "num_vehicles", "time_limit_s", "elapsed_s",
-                   "cost", "optimal_cost", "gap_pct", "feasible", "score"]
 
 
 # ---------------------------------------------------------------------------
@@ -130,37 +125,44 @@ def find_instances(sets, names):
     return instances
 
 
-def project_score(run_time, time_limit, cost, optimal_cost):
-    '''Score from the project spec, using the optimal cost in place of the best team's cost.'''
-    if run_time > 1.5 * time_limit:
-        return 0.25
-    time_term = 2 ** max(0, run_time / time_limit - 1)
-    return 1 / (0.5 * (time_term + cost / optimal_cost))
-
-
 def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, time_limits, log_info):
     '''
-    Runs final_solution.find_solution once (through solver_log, which logs each step),
+    Runs final_solution.find_solution once (through test_case_logger, which logs each step),
     the same way run_algo does (separate process, shared best),
     and reads the best solution at TIME_LIMIT_FRACTION x each time limit.
     The process is terminated after the last one.
-    Returns [(time_limit, elapsed seconds, cost, routes)], one per time limit
+    Returns [(time_limit, run_time, cost, routes, found_at)], one per time limit:
+        run_time = seconds into the run when the best solution was read
+        found_at = seconds into the run when that solution was first found (None if not known)
     '''
     snapshots = []
     with multiprocessing.Manager() as manager:
         best = manager.dict(solution=(float("inf"), None))
+        start = time.monotonic()
+        log_info = {**log_info, "run_start": start}     # so test_case_logger times each new best from the same start
         process = multiprocessing.Process(
-            target=solver_log.find_solution_with_log,
+            target=test_case_logger.find_solution_with_log,
             args=(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_info),
         )
-        start = time.monotonic()
         process.start()
 
         for time_limit in time_limits:
             stop_at = start + final_solution.TIME_LIMIT_FRACTION * time_limit
             process.join(timeout=max(0, stop_at - time.monotonic()))   # returns early if the solver ends
-            cost, routes = best["solution"]
-            snapshots.append((time_limit, time.monotonic() - start, cost, routes))
+            run_time = time.monotonic() - start
+
+            # read the solution and when it was found together; if a new best lands between the two
+            # (the time is written just after the solution), read again
+            for _ in range(10):
+                current = best.copy()
+                cost, routes = current["solution"]
+                found_cost, found_at = current.get("found", (None, None))
+                if found_cost == cost:
+                    break
+                time.sleep(0.001)
+            else:
+                found_at = None
+            snapshots.append((time_limit, run_time, cost, routes, found_at))
 
         if process.is_alive():
             process.terminate()
@@ -192,64 +194,40 @@ def main():
     minutes = len(instances) * final_solution.TIME_LIMIT_FRACTION * time_limits[-1] / 60
     print(f"{len(instances)} instances, about {minutes:.0f} min in total\n")
 
-    with open(summary_path, "w", newline="") as summary_file:
-        summary = csv.writer(summary_file)
-        summary.writerow(SUMMARY_COLUMNS)
+    summary = test_case_logger.open_summary(str(summary_path))
 
-        # console: one line per instance, the gap from optimal at each time limit
-        gap_headers = "".join(f"{f'gap@{limit:g}s':>11}" for limit in time_limits)
-        print(f"{'instance':<16}{'optimal':>10}{gap_headers}{'cost':>11}")
+    # console: one line per instance, the gap from optimal at each time limit
+    gap_headers = "".join(f"{f'gap@{limit:g}s':>11}" for limit in time_limits)
+    print(f"{'instance':<16}{'optimal':>10}{gap_headers}{'cost':>11}")
 
-        for path in instances:
-            cust_demands, dist_matrix, vehicle_cap, num_vehicles = read_instance(path)
-            num_customers = len(cust_demands) - 1
+    for path in instances:
+        cust_demands, dist_matrix, vehicle_cap, num_vehicles = read_instance(path)
+        num_customers = len(cust_demands) - 1
 
-            opt_path = path.with_name(path.stem + "_opt.txt")
-            optimal_cost = read_solution(opt_path)[0] if opt_path.exists() else None
+        opt_path = path.with_name(path.stem + "_opt.txt")
+        optimal_cost = read_solution(opt_path)[0] if opt_path.exists() else None
 
-            log_info = {"log_path": log_path, "instance": path.stem}
+        log_info = {"log_path": log_path, "instance": path.stem}
 
-            # skip instances that can never be solved: log why, and do not run the solver
-            impossible = instance_infeasibility(cust_demands, vehicle_cap, num_vehicles)
-            if impossible:
-                log = solver_log.open_log(log_info)
-                solver_log.write_row(log, 0, "instance_infeasible", None, float("inf"), False,
-                                     None, num_vehicles, impossible)
-                log["file"].close()
-                for time_limit in time_limits:
-                    summary.writerow([run_id, path.stem, num_customers, num_vehicles, f"{time_limit:g}",
-                                      "0.00", "", optimal_cost if optimal_cost is not None else "",
-                                      "", "no", "0.000"])
-                summary_file.flush()
-                print(f"{path.stem:<16}{str(optimal_cost):>10}  skipped, instance infeasible: {impossible}")
-                continue
+        # skip instances that can never be solved: log why, and do not run the solver
+        impossible = instance_infeasibility(cust_demands, vehicle_cap, num_vehicles)
+        if impossible:
+            test_case_logger.write_skipped_instance(summary, log_info, run_id, path.stem, num_customers, num_vehicles,
+                                              optimal_cost, time_limits, impossible)
+            print(f"{path.stem:<16}{str(optimal_cost):>10}  skipped, instance infeasible: {impossible}")
+            continue
 
-            snapshots = run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles,
-                                           time_limits, log_info)
+        snapshots = run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles,
+                                       time_limits, log_info)
+        gap_texts = test_case_logger.write_summary_rows(summary, run_id, path.stem, cust_demands, dist_matrix,
+                                                  vehicle_cap, num_vehicles, optimal_cost, snapshots)
 
-            gap_texts = []
-            for time_limit, elapsed, cost, routes in snapshots:
-                feasible = (routes is not None and is_feasible(routes, cust_demands, vehicle_cap, num_vehicles)
-                            and abs(calculate_cost(dist_matrix, routes) - cost) < 1e-6)
-                # gap_pct: how far this solution is above the optimal cost, in %
-                gap_pct = 100 * (cost - optimal_cost) / optimal_cost if feasible and optimal_cost else None
-                score = project_score(elapsed, time_limit, cost, optimal_cost) if feasible and optimal_cost else 0
+        final_cost = snapshots[-1][2]
+        cost_text = f"{final_cost:.0f}" if final_cost != float("inf") else "none"
+        print(f"{path.stem:<16}{str(optimal_cost):>10}{''.join(f'{text:>11}' for text in gap_texts)}"
+              f"{cost_text:>11}")
 
-                summary.writerow([run_id, path.stem, num_customers, num_vehicles, f"{time_limit:g}",
-                                  f"{elapsed:.2f}", f"{cost:.2f}" if feasible else "",
-                                  optimal_cost if optimal_cost is not None else "",
-                                  f"{gap_pct:.2f}" if gap_pct is not None else "",
-                                  "yes" if feasible else "no", f"{score:.3f}"])
-                if gap_pct is not None:
-                    gap_texts.append(f"{gap_pct:.2f}%")
-                else:
-                    gap_texts.append("infeasible" if not feasible else "-")
-            summary_file.flush()
-
-            final_cost = snapshots[-1][2]
-            cost_text = f"{final_cost:.0f}" if final_cost != float("inf") else "none"
-            print(f"{path.stem:<16}{str(optimal_cost):>10}{''.join(f'{text:>11}' for text in gap_texts)}"
-                  f"{cost_text:>11}")
+    summary["file"].close()
 
     print(f"\ncheckpoint log: {os.path.relpath(log_path)}")
     print(f"summary:        {os.path.relpath(summary_path)}")
