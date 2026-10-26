@@ -12,7 +12,7 @@ Usage (from the project folder):
     python run_benchmarks.py --sets A B                       # only sets A and B
     python run_benchmarks.py --sets X --limit 5               # the 5 smallest instances of set X
     python run_benchmarks.py --instances A-n32-k5 X-n101-k25  # chosen instances
-    python run_benchmarks.py --limits 3 6 18                  # quick check with shorter limits
+    python run_benchmarks.py --limits 10 20 30                  # quick check with shorter limits
 
 Output (in logs/, written by test_case_logger.py):
     rfcs_log_<run_id>.csv     one row per solver step (columns: LOG_COLUMNS in test_case_logger.py)
