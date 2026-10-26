@@ -1,2 +1,0 @@
-run_id,instance,instance_type,num_customers,num_vehicles,time_s,cost,optimal_cost,gap_pct,feasible,score
-2026-10-26_03-10-11,X-n101-k25,small,100,25,4.20,,27591,,no,0.000

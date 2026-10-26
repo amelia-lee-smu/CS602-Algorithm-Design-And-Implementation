@@ -5,9 +5,9 @@ Improvement steps shared by Clarke-Wright and RFCS.
 def two_opt(path, dist_matrix):
     '''
     Improves the order of a path by reversing segments, trying every pair of edges,
-    until no reversal makes it shorter. Best for short paths such as a single route.
+    until no reversal makes it shorter. 
     The first and last items stay fixed. The path is changed in place.
-    Returns the improved path
+    Returns the improved path.
     '''
     last_index = len(path) - 1
 
@@ -52,9 +52,8 @@ def two_opt(path, dist_matrix):
 
 def optimised_two_opt(path, dist_matrix, nearest_neighbours):
     '''
-    Improves the order of a path by reversing segments, until no reversal makes it shorter.
-    Each customer is only paired with its nearest neighbours.
-    its first and last items stay fixed. The path is changed in place.
+    Similar to the original two_opt algorithm, except each customer is only paired with its nearest neighbours.
+    First and last items stay fixed. The path is changed in place.
     Returns the improved path
     '''
     last_index = len(path) - 1
@@ -112,50 +111,16 @@ def optimised_two_opt(path, dist_matrix, nearest_neighbours):
 # TODO: not sure if needed
 def three_opt(route, dist_matrix):
     '''
-    Improve the order of one route by removing 3 edges and reconnecting
-    the 3 segments in the cheapest way.
+    Improve the order of a route by removing 3 edges and reconnecting the 3 segments in the cheapest way.
     Repeat until no reconnection lowers the cost.
-    Routes are short (one vehicle's customers), so trying every combination is fine.
     Returns the improved route
     '''
     pass
 
 
-# TODO: unchecked
-def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
-                     penalty, max_doublings):
-    '''
-    Removes the overloads left by split_with_vehicle_overload.
-    Repeat up to max_doublings + 1 times:
-    1. relocate_and_swap with the penalty, until no move lowers distance + penalty * overload
-    2. If no route is over vehicle_cap, stop: the routes are feasible
-    3. Otherwise double the penalty, so overload counts for more in the next round
-    Returns (routes, repaired):
-        (feasible routes, True), or (the routes that are still overloaded, False) if the repair failed
-    '''
-    def has_overload(routes):
-        for route in routes:
-            load = 0
-            for customer in route:
-                load += cust_demands[customer]
-            if load > vehicle_cap:
-                return True
-        return False
-
-    # split_with_vehicle_overload may already return routes within capacity: no repair needed
-    if not has_overload(routes):
-        return routes, True
-
-    for _ in range(max_doublings + 1):
-        routes = relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap,
-                                   nearest_neighbours, rng, penalty)
-        if not has_overload(routes):
-            return routes, True
-        penalty *= 2    # local to this call: the caller's starting penalty is unchanged
-
-    return routes, False    # still overloaded: returned so the caller can see by how much
-
-
+# ---------------------------------------------------------------------------
+# Swapping customers between routes
+# ---------------------------------------------------------------------------
 # TODO: unchecked
 def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng, penalty=None,
                       customers_to_check=None):
@@ -311,35 +276,274 @@ def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_ne
     return [route for route in routes if len(route) > 2]    # drop routes left empty
 
 
+
+# ---------------------------------------------------------------------------
+# Partitioning of routes
+# ---------------------------------------------------------------------------
+MAX_OVERLOAD_FACTOR = 1.5    # split_with_vehicle_overload lets a route carry up to 1.5 x vehicle_cap
+MAX_PENALTY_DOUBLINGS = 5    # repair doubles the overload penalty at most 5 times before giving up
+
+# TODO: unchecked
+def split_within_vehicle_capacity(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles):
+    '''
+    Cuts the giant tour into at most num_vehicles routes at the lowest total cost, keeping the customers in tour order.
+    Returns the routes, or None if no split fits within num_vehicles for this tour order.
+    '''
+    num_customers = len(tour)
+    infinity = float("inf")
+
+    # Precompute along the tour, so the cost of any route tour[start..end] is
+    # route_start_cost[start] + route_end_cost[end], and extending a route by one customer is one addition
+    demands = [cust_demands[customer] for customer in tour]
+    distance_along_tour = [0] * num_customers       # distance from tour[0] to tour[position] along the tour
+    for position in range(1, num_customers):
+        distance_along_tour[position] = (distance_along_tour[position - 1]
+                                         + dist_matrix[tour[position - 1]][tour[position]])
+    route_start_cost = [dist_matrix[0][customer] - distance_along_tour[position]
+                        for position, customer in enumerate(tour)]
+    route_end_cost = [distance_along_tour[position] + dist_matrix[customer][0]
+                      for position, customer in enumerate(tour)]
+
+    # 1. Split with no vehicle limit (fast): cheapest[end] = cheapest cost to serve tour[0:end]
+    cheapest = [0] + [infinity] * num_customers
+    route_start = [0] * (num_customers + 1)         # route_start[end] = where the last route ends at `end` starts
+    routes_used = [0] * (num_customers + 1)
+
+    for start in range(num_customers):
+        if cheapest[start] == infinity:
+            continue
+        base_cost = cheapest[start] + route_start_cost[start]
+        load = 0
+        for end in range(start, num_customers):
+            load += demands[end]
+            if load > vehicle_cap:
+                break   # longer routes from this start only get heavier
+            total = base_cost + route_end_cost[end]
+            if total < cheapest[end + 1]:
+                cheapest[end + 1] = total
+                route_start[end + 1] = start
+                routes_used[end + 1] = routes_used[start] + 1
+
+    if cheapest[num_customers] == infinity:
+        return None     # a customer's demand alone is over vehicle_cap
+
+    # if it already fits within num_vehicles, it is also the best split with the limit
+    if routes_used[num_customers] <= num_vehicles:
+        # rebuild the routes by following route_start back from the end of the tour
+        routes = []
+        end = num_customers
+        while end > 0:
+            start = route_start[end]
+            routes.append([0, *tour[start:end], 0])
+            end = start
+        return routes[::-1]
+
+    # 2. Too many routes: split with the vehicle limit
+    # cheapest_with_k[end] = cheapest cost to serve tour[0:end] with exactly k routes
+    demand_left = [0] * (num_customers + 1)         # demand_left[start] = total demand of tour[start:]
+    for position in range(num_customers - 1, -1, -1):
+        demand_left[position] = demand_left[position + 1] + demands[position]
+
+    cheapest_with_k = [0] + [infinity] * num_customers      # k = 0 routes
+    route_starts = [None]                                   # route_starts[k][end], for k = 1, 2, ...
+    best_total, best_num_routes = infinity, 0
+
+    for k in range(1, num_vehicles + 1):
+        cheapest_next = [infinity] * (num_customers + 1)
+        starts_next = [0] * (num_customers + 1)
+        max_load_left = (num_vehicles - k + 1) * vehicle_cap  # most demand this route and the remaining ones can carry
+
+        for start in range(num_customers):
+            if cheapest_with_k[start] == infinity or demand_left[start] > max_load_left:
+                continue    # not reachable with k - 1 routes, or the rest can never fit in the vehicles left
+            base_cost = cheapest_with_k[start] + route_start_cost[start]
+            load = 0
+            for end in range(start, num_customers):
+                load += demands[end]
+                if load > vehicle_cap:
+                    break
+                total = base_cost + route_end_cost[end]
+                if total < cheapest_next[end + 1]:
+                    cheapest_next[end + 1] = total
+                    starts_next[end + 1] = start
+
+        route_starts.append(starts_next)
+        if cheapest_next[num_customers] < best_total:
+            best_total, best_num_routes = cheapest_next[num_customers], k
+        cheapest_with_k = cheapest_next
+
+    if best_total == infinity:
+        return None     # this tour order cannot be split into num_vehicles routes
+
+    # rebuild the routes by following route_starts back from the end of the tour, one route per k
+    routes = []
+    end = num_customers
+    for k in range(best_num_routes, 0, -1):
+        start = route_starts[k][end]
+        routes.append([0, *tour[start:end], 0])
+        end = start
+    return routes[::-1]
+
+
+# TODO: unchecked
+def split_with_vehicle_overload(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles, penalty):
+    '''
+    Cuts the giant tour into at most num_vehicles routes, keeping the customers in tour order.
+    Each route may go over vehicle_cap (up to MAX_OVERLOAD_FACTOR x vehicle_cap) at a cost of penalty per unit of overload. 
+    Used when split_within_vehicle_capacity finds no cut that fits.
+    Returns the (overloaded) routes , or None if even this finds no cuts.
+    '''
+    num_customers = len(tour)
+    infinity = float("inf")
+    max_load = MAX_OVERLOAD_FACTOR * vehicle_cap
+
+    # Precompute along the tour (same as split_within_vehicle_capacity), so the distance of route tour[start..end] is
+    # route_start_cost[start] + route_end_cost[end]
+    demands = [cust_demands[customer] for customer in tour]
+    distance_along_tour = [0] * num_customers
+    for position in range(1, num_customers):
+        distance_along_tour[position] = (distance_along_tour[position - 1]
+                                         + dist_matrix[tour[position - 1]][tour[position]])
+    route_start_cost = [dist_matrix[0][customer] - distance_along_tour[position]
+                        for position, customer in enumerate(tour)]
+    route_end_cost = [distance_along_tour[position] + dist_matrix[customer][0]
+                      for position, customer in enumerate(tour)]
+
+    demand_left = [0] * (num_customers + 1)         # demand_left[start] = total demand of tour[start:]
+    for position in range(num_customers - 1, -1, -1):
+        demand_left[position] = demand_left[position + 1] + demands[position]
+
+    # cheapest_with_k[end] = cheapest distance + penalty to serve tour[0:end] with exactly k routes
+    cheapest_with_k = [0] + [infinity] * num_customers      # k = 0 routes
+    route_starts = [None]                                   # route_starts[k][end], for k = 1, 2, ...
+    best_total, best_num_routes = infinity, 0
+
+    for k in range(1, num_vehicles + 1):
+        cheapest_next = [infinity] * (num_customers + 1)
+        starts_next = [0] * (num_customers + 1)
+        max_load_left = (num_vehicles - k + 1) * max_load  # most demand this route and the remaining ones can carry
+
+        for start in range(num_customers):
+            cost_before = cheapest_with_k[start]
+            if cost_before == infinity or demand_left[start] > max_load_left:
+                continue    # not reachable with k - 1 routes, or the rest can never fit in the vehicles left
+            base_cost = cost_before + route_start_cost[start]
+            load = 0
+            for end in range(start, num_customers):
+                load += demands[end]
+                if load > max_load:
+                    break   # longer routes from this start only get heavier
+                total = base_cost + route_end_cost[end]
+                if load > vehicle_cap:
+                    total += penalty * (load - vehicle_cap)
+                if total < cheapest_next[end + 1]:
+                    cheapest_next[end + 1] = total
+                    starts_next[end + 1] = start
+
+        route_starts.append(starts_next)
+        if cheapest_next[num_customers] < best_total:
+            best_total, best_num_routes = cheapest_next[num_customers], k
+        cheapest_with_k = cheapest_next
+
+    if best_total == infinity:
+        return None     # even with overload allowed, this tour cannot be split into num_vehicles routes
+
+    # rebuild the routes by following route_starts back from the end of the tour, one route per k
+    routes = []
+    end = num_customers
+    for k in range(best_num_routes, 0, -1):
+        start = route_starts[k][end]
+        routes.append([0, *tour[start:end], 0])
+        end = start
+    return routes[::-1]
+
+
+# TODO: unchecked
+def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
+                     penalty, max_doublings):
+    '''
+    Fixes the overloads left by split_with_vehicle_overload.
+    Repeat up to max_doublings + 1 times:
+    1. relocate_and_swap with the penalty, until no move lowers distance + penalty * overload
+    2. If no route is over vehicle_cap, stop: the routes are feasible
+    3. Otherwise double the penalty, so overload counts for more in the next round
+    Returns the feasible routes, or None if a route is still overloaded at the end
+    '''
+    def has_overload(routes):
+        for route in routes:
+            load = 0
+            for customer in route:
+                load += cust_demands[customer]
+            if load > vehicle_cap:
+                return True
+        return False
+
+    for _ in range(max_doublings + 1):
+        routes = relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap,
+                                   nearest_neighbours, rng, penalty)
+        if not has_overload(routes):
+            return routes
+        penalty *= 2    # local to this call: the caller's starting penalty is unchanged
+
+    return None     # still overloaded after every doubling
+
+
+# TODO: unchecked
+def split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
+                                   nearest_neighbours, rng, penalty):
+    '''
+    Splits the tour by allowing overloaded routes first, then moves customers until there is no overload.
+    Returns (routes, method):
+        (routes, "split_soft")             if it worked
+        (None, "split_soft_no_cut")        if there is no cut, even with overload allowed
+        (None, "repair_failed")            if the overload cannot be removed
+    '''
+    routes = split_with_vehicle_overload(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles, penalty)
+    if routes is None:
+        return None, "split_soft_no_cut"    # no cut, even allowing routes up to MAX_OVERLOAD_FACTOR x vehicle_cap
+
+    # move customers until nothing is overloaded
+    routes = repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap,
+                              nearest_neighbours, rng, penalty, MAX_PENALTY_DOUBLINGS)
+    if routes is None:
+        return None, "repair_failed"
+    
+    return routes, "split_soft"
+
+
+
 # ---------------------------------------------------------------------------
 # Ruin and recreate
 # ---------------------------------------------------------------------------
+MIN_REMOVE = 5                      # ruin removes a random number of nearby customers,
+MAX_REMOVE = 30                     # from MIN_REMOVE to min(MAX_REMOVE, num_customers // 4)
+
+
 # TODO: unchecked
 def ruin(routes, nearest_neighbours, num_remove, rng):
     '''
     Removes a group of customers that are close together:
     a random customer, plus its nearest neighbours until num_remove customers are removed.
     Routes left with no customers are dropped. The input routes are not changed.
-    Returns (ruined routes, removed customers)
+    Returns (ruinedroutes, removed_customers)
     '''
     customers = [customer for route in routes for customer in route[1:-1]]
     first_removed = rng.choice(customers)
-    removed = [first_removed, *nearest_neighbours[first_removed][:num_remove - 1]]
+    removed_customers = [first_removed, *nearest_neighbours[first_removed][:num_remove - 1]]
 
-    removed_set = set(removed)
+    removed_set = set(removed_customers)
     ruined_routes = []
     for route in routes:
         kept_route = [stop for stop in route if stop not in removed_set]     # the depot (0) is never removed
         if len(kept_route) > 2:
             ruined_routes.append(kept_route)
-    return ruined_routes, removed
+    return ruined_routes, removed_customers
 
 
 # TODO: unchecked
-def recreate(routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng):
+def recreate(routes, removed_customers, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng):
     '''
-    Puts the removed customers back one at a time (in random order), each at its cheapest spot
-    in a route that still has room:
+    Puts the removed customers back one at a time (in random order), each at its cheapest spot, in a route that still has room:
     1. first try the spots just before or after its nearest neighbours (fast, and usually the cheapest)
     2. if none of those routes have room, try every spot in every route with room
     3. if it still fits nowhere, open a new route [0, customer, 0] while vehicles are left
@@ -367,7 +571,7 @@ def recreate(routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicl
         return (dist_matrix[previous_stop][customer] + distances_from_customer[next_stop]
                 - dist_matrix[previous_stop][next_stop])
 
-    insert_order = list(removed)
+    insert_order = list(removed_customers)
     rng.shuffle(insert_order)       # a different order each time gives different rebuilds
 
     for customer in insert_order:
@@ -413,15 +617,13 @@ def recreate(routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicl
     return routes
 
 
-# TODO: unchecked
 def ruin_and_recreate(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
                       nearest_neighbours, num_remove, rng):
     '''
     Removes num_remove nearby customers from the routes and puts them back at their cheapest spots.
-    The input routes are not changed.
-    Returns (new routes, removed customers), or (None, removed customers) if a customer could not be placed
+    Returns (new routes, removed_customers), or (None, removed_customers) if a customer could not be placed
     '''
-    ruined_routes, removed = ruin(routes, nearest_neighbours, num_remove, rng)
-    new_routes = recreate(ruined_routes, removed, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
+    ruined_routes, removed_customers = ruin(routes, nearest_neighbours, num_remove, rng)
+    new_routes = recreate(ruined_routes, removed_customers, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
                           nearest_neighbours, rng)
-    return new_routes, removed
+    return new_routes, removed_customers # we need removed_customers so that we can skip 2-opt on routes that have no changes in the customers

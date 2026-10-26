@@ -12,19 +12,18 @@ TIME_LIMITS = {
 TIME_LIMIT_FRACTION = 0.95
 
 
-def find_solution(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_info):
+def find_solution(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
     # 1. Clarke-Wright savings: a fast first feasible solution
     # TODO: call the CW algo here and save its solution: best["solution"] = (cost, routes)
 
     # 2. Route first, cluster second (RFCS): search for a better solution with the remaining time
-    run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_info)
+    run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best)
 
     best_cost, best_routes = best["solution"]
     return best_cost, best_routes
 
 
-def run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type, log_info=None):
-    # log_info: only passed by the batch tester, to log each run to the CSV file
+def run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type):
     TIMEOUT = TIME_LIMIT_FRACTION * TIME_LIMITS[instance_type]
 
     with multiprocessing.Manager() as manager:
@@ -34,7 +33,7 @@ def run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type
         # Run the algo
         process = multiprocessing.Process(
             target=find_solution, 
-            args=(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_info)
+            args=(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best)
         )
         process.start()
         process.join(timeout=TIMEOUT) # set the time limit for the run
