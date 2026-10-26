@@ -1,6 +1,6 @@
 '''
 Logging for testing only. Writes two CSV files per batch of test cases (in logs/):
-    rfcs_log_<run_id>.csv     one row per solver step, so a run can be checked afterwards
+    steps_log_<run_id>.csv    one row per solver step, so a run can be checked afterwards
     summary_<run_id>.csv      one row per instance and time limit: cost, optimal cost, gap_pct, feasible, score
 
 None of the solver files refer to this file. attach() wraps a few solver functions from the
@@ -14,10 +14,10 @@ Used by run_benchmarks.py:
 '''
 
 import csv
-import inspect
 import os
 import time
 
+import clark_wright_savings as cws
 import final_solution
 import route_first_cluster_second as rfcs
 from utilities import SEED, calculate_cost, is_feasible
@@ -32,7 +32,7 @@ LOG_COLUMNS = [
     "instance",         # test case name, e.g. A-n32-k5
     "time_s",           # seconds since the run started
     "step_time_s",      # seconds since the previous row, i.e. how long this step took
-    "iteration",        # 0 = setup, then 1, 2, 3, ... (one giant tour, or one ruin and recreate)
+    "iteration",        # 0 = setup, packing and Clarke-Wright, then 1, 2, 3, ... (one giant tour, or one ruin and recreate)
     "step",             # what just finished (see LOG_STEPS)
     "cost",             # cost right after this step (empty if the step failed)
     "best_cost",        # best feasible cost so far (empty if there is none yet)
@@ -44,11 +44,21 @@ LOG_COLUMNS = [
 
 # Values of the step column. Each row is written when its step FINISHES, so if the process
 # was terminated, the step after the last row is the one that was still running.
-# An iteration runs: giant_tour -> split / split_soft (or a failure) -> relocate_swap -> two_opt
+# Iteration 0 runs: start -> packing (or packing_failed) -> clarke_wright (or clarke_wright_failed)
+# Each RFCS iteration runs: giant_tour -> split / split_soft (or a failure) -> relocate_swap -> two_opt
 #              or:   ruin_recreate (or recreate_failed) -> relocate_swap -> two_opt
+# To keep the file small, only these rows are written:
+#   - start, packing and Clarke-Wright rows, and their failures
+#   - restarts: giant_tour, split / split_soft, and their failures
+#   - ruin_recreate / relocate_swap / two_opt only when that step found a new best
+# recreate_failed is not written (it happens most iterations); it is listed below for reference.
 LOG_STEPS = {
     "start":                "setup finished; detail has the seed, size and tightness of the instance",
     "instance_infeasible":  "the instance can never be solved (detail says why); run_benchmarks.py skips it",
+    "packing":              "customers packed by demand (detail says if a repair was needed)",
+    "packing_failed":       "FAILED: packing overloaded a route and the repair could not fix it",
+    "clarke_wright":        "Clarke-Wright savings routes (detail says if the vehicle reduction fallback was used)",
+    "clarke_wright_failed": "FAILED: too many routes, and the fallback's repair could not fix the overload",
     "giant_tour":           "giant tour built and 2-opted; cost = its length as a round trip from the depot",
     "split":                "tour cut into routes within capacity",
     "split_soft":           "split found no cut, so routes were allowed to overload, then repaired",
@@ -60,6 +70,9 @@ LOG_STEPS = {
     "relocate_swap":        "customers moved between routes",
     "two_opt":              "customers reordered inside each route",
 }
+
+# saves from these steps are always logged; saves from the other steps only when they find a new best
+ALWAYS_LOGGED_STEPS = {"packing", "clarke_wright", "split", "split_soft"}
 
 
 def open_log(log_info):
@@ -137,6 +150,7 @@ SUMMARY_COLUMNS = [
     "num_vehicles",
     "time_limit_s",   # the time limit this row is for (30 / 60 / 180)
     "best_found_s",   # seconds into the run when this best solution was first found
+    "best_found_by",  # which algorithm found it: packing / clarke_wright / rfcs
     "cost",           # cost of the best solution then (empty if there is no feasible one)
     "optimal_cost",   # optimal cost given with the test case (*_opt.txt)
     "gap_pct",        # how far cost is above optimal_cost, in %
@@ -172,16 +186,17 @@ def write_summary_rows(summary, run_id, instance, cust_demands, dist_matrix, veh
                        optimal_cost, snapshots):
     '''
     Writes one summary row per time limit for an instance that was run.
-    snapshots: [(time_limit, run_time, cost, routes, found_at)], the best solution read at each time limit:
+    snapshots: [(time_limit, run_time, cost, routes, found_at, found_by)], the best solution read at each time limit:
         run_time = seconds into the run when it was read (TIME_LIMIT_FRACTION x the limit), used for the score,
                    since the program always runs until it is stopped
         found_at = seconds into the run when that solution was first found (None if not known)
+        found_by = the algorithm that found it (None if not known)
     A solution counts as feasible only if is_feasible passes and its cost matches its routes.
     Returns the gap at each time limit as text for the console, e.g. ["0.16%", "infeasible"]
     '''
     num_customers = len(cust_demands) - 1
     gap_texts = []
-    for time_limit, run_time, cost, routes, found_at in snapshots:
+    for time_limit, run_time, cost, routes, found_at, found_by in snapshots:
         feasible = (routes is not None and is_feasible(routes, cust_demands, vehicle_cap, num_vehicles)
                     and abs(calculate_cost(dist_matrix, routes) - cost) < 1e-6)
         # gap_pct: how far this solution is above the optimal cost, in %
@@ -190,6 +205,7 @@ def write_summary_rows(summary, run_id, instance, cust_demands, dist_matrix, veh
 
         summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, f"{time_limit:g}",
                                     f"{found_at:.3f}" if feasible and found_at is not None else "",
+                                    found_by if feasible and found_by is not None else "",
                                     f"{cost:.2f}" if feasible else "",
                                     optimal_cost if optimal_cost is not None else "",
                                     f"{gap_pct:.2f}" if gap_pct is not None else "",
@@ -214,7 +230,7 @@ def write_skipped_instance(summary, log_info, run_id, instance, num_customers, n
 
     for time_limit in time_limits:
         summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, f"{time_limit:g}",
-                                    "0.00", "", optimal_cost if optimal_cost is not None else "",
+                                    "0.00", "", "", optimal_cost if optimal_cost is not None else "",
                                     "", "no", "0.000"])
     summary["file"].flush()
 
@@ -226,43 +242,82 @@ def write_skipped_instance(summary, log_info, run_id, instance, num_customers, n
 def attach(log_info, cust_demands, dist_matrix, vehicle_cap, num_vehicles):
     '''
     Opens the log and wraps the solver functions that mark the end of each step, so each one writes a row:
-        final_solution.run_rfcs         -> start (after Clarke-Wright, as RFCS begins)
-        rfcs.build_giant_tour           -> giant_tour (and starts a new iteration)
-        rfcs.partition_giant_tour       -> split_soft_no_cut / repair_failed / partition_infeasible (on failure)
-        rfcs.ruin_and_recreate          -> recreate_failed (on failure; also starts a new iteration)
-        rfcs.check_and_update_new_best  -> split / split_soft / ruin_recreate / relocate_swap / two_opt
+        final_solution.run_packing          -> start (setup finished), then packing / packing_failed
+        final_solution.run_clarke_wright    -> clarke_wright / clarke_wright_failed
+        rfcs.build_giant_tour               -> giant_tour (and starts a new iteration)
+        rfcs.partition_giant_tour           -> split_soft_no_cut / repair_failed / partition_infeasible (on failure)
+        rfcs.ruin_and_recreate              -> recreate_failed (on failure; also starts a new iteration)
+        check_and_update_new_best           -> packing / clarke_wright / split / split_soft / ruin_recreate /
+                                               relocate_swap / two_opt (wrapped in each module that calls it)
     Each loop of run_rfcs calls exactly one of build_giant_tour or ruin_and_recreate,
     so counting those calls gives the same iteration numbers as run_rfcs.
     check_and_update_new_best is not told which step it is saving, so the name comes from the function
-    that produced the routes just before it (run_rfcs always saves straight after each step):
+    that produced the routes just before it (each algorithm always saves straight after each step):
+        run_packing -> "packing", run_clarke_wright -> "clarke_wright",
         partition_giant_tour -> its method ("split" / "split_soft"), ruin_and_recreate -> "ruin_recreate",
         improve_between_routes -> "relocate_swap", improve_within_routes -> "two_opt"
     Only changes the modules in this process, so call it inside the solver process.
     '''
     log = open_log(log_info)
-    tracker = {"iteration": 0, "best_cost": float("inf"), "step": ""}    # step: the last step that made routes
+    # step: the last step that made routes; algorithm: packing / clarke_wright / rfcs;
+    # saved: whether the current algorithm reached check_and_update_new_best; detail: for the next row
+    tracker = {"iteration": 0, "best_cost": float("inf"), "step": "", "algorithm": "", "saved": False, "detail": ""}
 
     # when the run started (set by run_benchmarks.py before starting this process), for the time of each new best
     run_start = log_info.get("run_start", time.monotonic()) if log_info else time.monotonic()
 
-    def record_new_best_time(best, cost):
-        # stored next to the solution in the shared best dict, so run_benchmarks.py can read when it was found
-        best["found"] = (cost, time.monotonic() - run_start)
+    def record_new_best(best, cost):
+        # stored next to the solution in the shared best dict, so run_benchmarks.py can read when and how it was found
+        best["found"] = (cost, time.monotonic() - run_start, tracker["algorithm"])
 
     def row(step, cost=None, num_routes=None, detail="", new_best=False):
         write_row(log, tracker["iteration"], step, cost, tracker["best_cost"], new_best,
                   num_routes, num_vehicles, detail)
 
-    original_run_rfcs = final_solution.run_rfcs
-    def run_rfcs_logged(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, *args, **kwargs):
-        tracker["best_cost"] = best["solution"][0]      # Clarke-Wright's cost, if it saved one
-        if best["solution"][1] is not None:
-            record_new_best_time(best, best["solution"][0])
+    def wrap_start_algorithm(module, function_name, algorithm, failed_detail):
+        # names the algorithm for the rows that follow; logs a failed row if it never saved any routes
+        original = getattr(module, function_name)
+        def algorithm_logged(*args, **kwargs):
+            tracker["algorithm"] = tracker["step"] = algorithm
+            tracker["saved"], tracker["detail"] = False, ""
+            result = original(*args, **kwargs)
+            if not tracker["saved"]:
+                row(f"{algorithm}_failed", detail=failed_detail)
+            return result
+        setattr(module, function_name, algorithm_logged)
+
+    # start row, written just before packing (setup is finished by then)
+    original_run_packing = final_solution.run_packing
+    def run_packing_with_start_row(*args, **kwargs):
         total_demand = sum(cust_demands)
         row("start", detail=(f"seed {SEED}, {len(cust_demands) - 1} customers, {num_vehicles} vehicles, "
                              f"capacity {vehicle_cap}, total demand {total_demand}, "
                              f"tightness {total_demand / (num_vehicles * vehicle_cap):.3f}"))
-        return original_run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, *args, **kwargs)
+        return original_run_packing(*args, **kwargs)
+    final_solution.run_packing = run_packing_with_start_row
+
+    wrap_start_algorithm(final_solution, "run_packing", "packing", "packing overloaded a route; repair failed")
+    wrap_start_algorithm(final_solution, "run_clarke_wright", "clarke_wright",
+                         "too many routes; repair after vehicle reduction failed")
+
+    # details: whether packing needed a repair, and whether Clarke-Wright needed its fallback
+    original_packing_repair = final_solution.repair_overloads
+    def packing_repair_logged(*args, **kwargs):
+        tracker["detail"] = "packing overloaded a route, repaired"
+        return original_packing_repair(*args, **kwargs)
+    final_solution.repair_overloads = packing_repair_logged
+
+    original_vehicle_reduction = cws.vehicle_reduction
+    def vehicle_reduction_logged(routes, *args, **kwargs):
+        tracker["detail"] = (f"{len(routes)} routes > {num_vehicles} vehicles: "
+                             f"vehicle reduction, cheapest insertion and repair used")
+        return original_vehicle_reduction(routes, *args, **kwargs)
+    cws.vehicle_reduction = vehicle_reduction_logged
+
+    original_run_rfcs = final_solution.run_rfcs
+    def run_rfcs_logged(*args, **kwargs):
+        tracker["algorithm"] = "rfcs"
+        return original_run_rfcs(*args, **kwargs)
     final_solution.run_rfcs = run_rfcs_logged
 
     original_build_giant_tour = rfcs.build_giant_tour
@@ -286,14 +341,10 @@ def attach(log_info, cust_demands, dist_matrix, vehicle_cap, num_vehicles):
     rfcs.partition_giant_tour = partition_giant_tour_logged
 
     original_ruin_and_recreate = rfcs.ruin_and_recreate
-    ruin_signature = inspect.signature(original_ruin_and_recreate)
     def ruin_and_recreate_logged(*args, **kwargs):
         tracker["iteration"] += 1
         result = original_ruin_and_recreate(*args, **kwargs)
-        if result[0] is None:
-            num_remove = ruin_signature.bind(*args, **kwargs).arguments.get("num_remove")
-            row("recreate_failed", detail=f"{num_remove} customers removed")
-        else:
+        if result[0] is not None:       # failures are not logged: they happen most iterations
             tracker["step"] = "ruin_recreate"
         return result
     rfcs.ruin_and_recreate = ruin_and_recreate_logged
@@ -310,18 +361,26 @@ def attach(log_info, cust_demands, dist_matrix, vehicle_cap, num_vehicles):
         return original_improve_within_routes(*args, **kwargs)
     rfcs.improve_within_routes = improve_within_routes_logged
 
-    original_check_and_update_new_best = rfcs.check_and_update_new_best
-    def check_and_update_new_best_logged(routes, state):
-        best_before = state["best_cost"]
-        cost = original_check_and_update_new_best(routes, state)
-        tracker["iteration"] = state["iteration"]
-        tracker["best_cost"] = state["best_cost"]
-        new_best = state["best_cost"] < best_before
-        if new_best:
-            record_new_best_time(state["best"], state["best_cost"])
-        row(tracker["step"], cost, len(routes), new_best=new_best)
-        return cost
-    rfcs.check_and_update_new_best = check_and_update_new_best_logged
+    def wrap_check_and_update_new_best(module):
+        original = module.check_and_update_new_best
+        def check_and_update_new_best_logged(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state):
+            best_before = state["best_cost"]
+            cost = original(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state)
+            tracker["iteration"] = state.get("iteration", 0)    # 0 for packing and Clarke-Wright (run_rfcs adds it)
+            tracker["best_cost"] = state["best_cost"]
+            tracker["saved"] = True
+            new_best = state["best_cost"] < best_before
+            if new_best:
+                record_new_best(state["best"], state["best_cost"])
+            # every save from packing, Clarke-Wright and restarts; ruin and recreate's steps only on a new best
+            if new_best or tracker["step"] in ALWAYS_LOGGED_STEPS:
+                row(tracker["step"], cost, len(routes), detail=tracker["detail"], new_best=new_best)
+            tracker["detail"] = ""
+            return cost
+        module.check_and_update_new_best = check_and_update_new_best_logged
+
+    for module in (final_solution, cws, rfcs):     # packing, Clarke-Wright and RFCS
+        wrap_check_and_update_new_best(module)
 
 
 def find_solution_with_log(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best, log_info):

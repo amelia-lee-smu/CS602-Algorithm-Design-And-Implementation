@@ -108,16 +108,6 @@ def optimised_two_opt(path, dist_matrix, nearest_neighbours):
     return path
 
 
-# TODO: not sure if needed
-def three_opt(route, dist_matrix):
-    '''
-    Improve the order of a route by removing 3 edges and reconnecting the 3 segments in the cheapest way.
-    Repeat until no reconnection lowers the cost.
-    Returns the improved route
-    '''
-    pass
-
-
 # ---------------------------------------------------------------------------
 # Swapping customers between routes
 # ---------------------------------------------------------------------------
@@ -509,6 +499,67 @@ def split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap,
         return None, "repair_failed"
     
     return routes, "split_soft"
+
+
+# ---------------------------------------------------------------------------
+# Reducing the number of vehicles used
+# ---------------------------------------------------------------------------
+# TODO: unchecked
+def vehicle_reduction(routes, cust_demands, num_vehicles):
+    '''
+    Removes the lightest routes until only num_vehicles are left.
+    The input routes are not changed.
+    Returns (kept routes, customers of the removed routes)
+    '''
+    num_to_remove = len(routes) - num_vehicles
+    if num_to_remove <= 0:
+        return [list(route) for route in routes], []
+
+    # route indexes from lightest to heaviest; the lightest have the fewest demand units to place elsewhere
+    loads = [sum(cust_demands[customer] for customer in route) for route in routes]
+    lightest_first = sorted(range(len(routes)), key=loads.__getitem__)
+    removed_route_indexes = set(lightest_first[:num_to_remove])
+
+    kept_routes = [list(route) for index, route in enumerate(routes) if index not in removed_route_indexes]
+    removed_customers = [customer for index in removed_route_indexes for customer in routes[index][1:-1]]
+    return kept_routes, removed_customers
+
+
+# TODO: unchecked
+def cheapest_insertion(routes, removed_customers, cust_demands, dist_matrix, vehicle_cap):
+    '''
+    Inserts each removed customer (biggest demand first) into the route where it causes the least overload,
+    breaking ties by the cheapest extra distance. Routes may end up overloaded.
+    Returns the updated routes.
+    '''
+    loads = [sum(cust_demands[customer] for customer in route) for route in routes]
+
+    # biggest demand first: the hardest customers to fit get placed while there is the most room left
+    for customer in sorted(removed_customers, key=cust_demands.__getitem__, reverse=True):
+        demand = cust_demands[customer]
+        distances_from_customer = dist_matrix[customer]
+        best_overload, best_extra_distance = float("inf"), float("inf")
+        best_route_index, best_position = None, None
+
+        for route_index, route in enumerate(routes):
+            # extra overload this insertion would cause on this route (0 if it still fits)
+            load = loads[route_index]
+            extra_overload = max(0, load + demand - vehicle_cap) - max(0, load - vehicle_cap)
+            if extra_overload > best_overload:
+                continue    # worse than the best route so far, whatever the distance
+
+            for position in range(1, len(route)):
+                previous_stop, next_stop = route[position - 1], route[position]
+                extra_distance = (dist_matrix[previous_stop][customer] + distances_from_customer[next_stop]
+                                  - dist_matrix[previous_stop][next_stop])
+                if (extra_overload, extra_distance) < (best_overload, best_extra_distance):
+                    best_overload, best_extra_distance = extra_overload, extra_distance
+                    best_route_index, best_position = route_index, position
+
+        routes[best_route_index].insert(best_position, customer)
+        loads[best_route_index] += demand
+
+    return routes
 
 
 

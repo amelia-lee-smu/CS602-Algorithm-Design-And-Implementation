@@ -1,10 +1,6 @@
 '''
 Route first, cluster second (Beasley, 1983), with modifications.
 '''
-
-import heapq
-import random
-
 from optimisations import *
 from utilities import *
 
@@ -12,48 +8,9 @@ from utilities import *
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-NUM_NEIGHBOURS = 30                 # nearest neighbours used by 2-opt and relocate/swap
 NN_CHOICES = 3                      # giant tour picks at random among the 3 nearest unvisited customers
 RANDOMISED_RESTART_AFTER = 1000     # use a new giant tour after this many consecutive ruin and recreate iterations without a cost improvement
 
-def build_nearest_neighbours(dist_matrix, num_neighbours=NUM_NEIGHBOURS):
-    '''
-    Finds each customer's num_neighbours closest customers (depot excluded).
-    Returns a list where nearest_neighbours[customer] holds that customer's closest customers, nearest first.
-    '''
-    customers = range(1, len(dist_matrix))
-    nearest_neighbours = [[]]  # depot has no neighbours, leave first list empty
-
-    for customer in customers:
-        distances_from_customer = dist_matrix[customer]
-        # heapq.nsmallest finds the closest few without sorting every customer
-        # num_neighbours + 1, as the list includes the customer itself (distance 0)
-        closest = heapq.nsmallest(num_neighbours + 1, customers, key=distances_from_customer.__getitem__)
-
-        # remove the customer by value, in case there is another customer at distance 0
-        nearest_neighbours.append([other_customer for other_customer in closest if other_customer != customer])
-
-    return nearest_neighbours
-
-
-# TODO: unchecked
-def starting_overload_penalty(cust_demands, dist_matrix):
-    '''
-    Finds the cost per unit of overload used by split_with_vehicle_overload and repair_overloads:
-    average distance between customers / average demand, so one unit of overload costs about one edge.
-    Returns the penalty
-    '''
-    num_customers = len(dist_matrix) - 1
-    total_demand = sum(cust_demands)
-    if num_customers < 2 or total_demand == 0:
-        return 1.0      # no pairs of customers, or no demand to overload with
-
-    # sum each customer's row in C (fast), skipping the depot column
-    total_distance = sum(sum(dist_matrix[customer][1:]) for customer in range(1, num_customers + 1))
-    average_distance = total_distance / (num_customers * (num_customers - 1))   # diagonal is 0
-    average_demand = total_demand / num_customers
-
-    return average_distance / average_demand
 
 
 # ---------------------------------------------------------------------------
@@ -179,23 +136,23 @@ def improve_within_routes(routes, dist_matrix, customers_to_check=None):
     return routes
 
 
-def improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
+def improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng,
                             state, customers_to_check=None):
     '''
     Improves feasible routes (from partition_giant_tour, or from ruin and recreate):
     1. between routes: relocate and swap customers between nearby routes
     2. within routes: 2-opt on each route
     customers_to_check: only work around these customers, e.g. the ones ruin and recreate moved. otherwise, None.
-    state: from run_rfcs; check_and_update_new_best(routes, state) is called after each step,
+    state: from run_rfcs; check_and_update_new_best is called after each step,
     so a new best is saved.
     Returns (improved routes, new cost)
     '''
     routes = improve_between_routes(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
                                     customers_to_check)
-    check_and_update_new_best(routes, state)
+    check_and_update_new_best(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state)
 
     routes = improve_within_routes(routes, dist_matrix, customers_to_check)
-    cost = check_and_update_new_best(routes, state)     # also returns the cost, so it is not computed again
+    cost = check_and_update_new_best(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state)     # also returns the cost, so it is not computed again
 
     return routes, cost
 
@@ -204,33 +161,20 @@ def improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap, near
 # Main loop
 # ---------------------------------------------------------------------------
 
-def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
+def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, overload_penalty, rng, state):
     '''
     Outlines steps for the RFCS approach.
     '''
     # Setup
     num_customers = len(cust_demands) - 1
-    rng = random.Random(SEED)                                                   # random number generator, so every run can be reproduced
-    current_cost = best["solution"][0]                                          # get the current best cost
-    current_routes = best["solution"][1]                                        # what ruin and recreate works on (None if no solution yet)
-    nearest_neighbours = build_nearest_neighbours(dist_matrix, NUM_NEIGHBOURS)  # get each customer's nearest neighbours
-    overload_penalty = starting_overload_penalty(cust_demands, dist_matrix)     # cost per unit of overload
+    current_cost = state["best_cost"]                                           # get the current best cost
+    current_routes = state["best"]["solution"][1]                               # what ruin and recreate works on (None if no solution yet)
 
     # how many customers the ruin step removes
     max_remove = max(1, min(MAX_REMOVE, num_customers // 4))                    # cannot exceed 1/4 of the customers 
     min_remove = min(MIN_REMOVE, max_remove)                                    # must be smaller than max_remove
     iterations_without_improvement = 0                                          # ruin and recreate iterations since current last improved
-
-    # dict storing the current best solution, which will be updated in the loop
-    state = {
-        "cust_demands": cust_demands,
-        "dist_matrix": dist_matrix,
-        "vehicle_cap": vehicle_cap,
-        "num_vehicles": num_vehicles,
-        "best": best,
-        "best_cost": current_cost,
-        "iteration": 0,
-    }
+    state["iteration"] = 0                                                      # RFCS loop count (read by test_case_logger.py)
 
     # Repeat until run_algo terminates the process
     while True:
@@ -251,12 +195,12 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
                 continue
 
             # if feasible, see if it is a new best
-            check_and_update_new_best(routes, state)
+            check_and_update_new_best(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state)
             iterations_without_improvement = 0          # reset attempts counter so that it goes to ruin and recreate in the next iteration
 
             # improve the routes, and make them the current solution, even if worse than the best
             current_routes, current_cost = improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap,
-                                                                   nearest_neighbours, rng, state)
+                                                                   num_vehicles, nearest_neighbours, rng, state)
 
         # use ruin and recreate to improve on the current solution
         else:
@@ -270,10 +214,10 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
                 continue
 
             # if feasible, see if it is a new best
-            check_and_update_new_best(routes, state)
+            check_and_update_new_best(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state)
 
             # improve on the current routes, and see there is a new best after each stage
-            routes, cost = improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap,
+            routes, cost = improve_feasible_routes(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
                                                    nearest_neighbours, rng, state, customers_to_check=removed_customers)
 
             # keep the result as the current solution only if it is cheaper

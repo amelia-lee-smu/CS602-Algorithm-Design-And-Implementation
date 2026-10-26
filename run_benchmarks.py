@@ -15,7 +15,7 @@ Usage (from the project folder):
     python run_benchmarks.py --limits 10 20 30                  # quick check with shorter limits
 
 Output (in logs/, written by test_case_logger.py):
-    rfcs_log_<run_id>.csv     one row per solver step (columns: LOG_COLUMNS in test_case_logger.py)
+    steps_log_<run_id>.csv    one row per solver step (columns: LOG_COLUMNS in test_case_logger.py)
     summary_<run_id>.csv      one row per instance and time limit (columns: SUMMARY_COLUMNS in test_case_logger.py)
 
 Instances that can never be solved (see instance_infeasibility) are skipped: the solver is not run,
@@ -131,9 +131,10 @@ def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, tim
     the same way run_algo does (separate process, shared best),
     and reads the best solution at TIME_LIMIT_FRACTION x each time limit.
     The process is terminated after the last one.
-    Returns [(time_limit, run_time, cost, routes, found_at)], one per time limit:
+    Returns [(time_limit, run_time, cost, routes, found_at, found_by)], one per time limit:
         run_time = seconds into the run when the best solution was read
         found_at = seconds into the run when that solution was first found (None if not known)
+        found_by = the algorithm that found it: packing / clarke_wright / rfcs (None if not known)
     '''
     snapshots = []
     with multiprocessing.Manager() as manager:
@@ -156,13 +157,13 @@ def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, tim
             for _ in range(10):
                 current = best.copy()
                 cost, routes = current["solution"]
-                found_cost, found_at = current.get("found", (None, None))
+                found_cost, found_at, found_by = current.get("found", (None, None, None))
                 if found_cost == cost:
                     break
                 time.sleep(0.001)
             else:
-                found_at = None
-            snapshots.append((time_limit, run_time, cost, routes, found_at))
+                found_at = found_by = None
+            snapshots.append((time_limit, run_time, cost, routes, found_at, found_by))
 
         if process.is_alive():
             process.terminate()
@@ -182,7 +183,7 @@ def main():
     time_limits = sorted(args.limits)
 
     run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_path = str(LOG_DIR / f"rfcs_log_{run_id}.csv")
+    log_path = str(LOG_DIR / f"steps_log_{run_id}.csv")
     summary_path = LOG_DIR / f"summary_{run_id}.csv"
     LOG_DIR.mkdir(exist_ok=True)
 
@@ -229,7 +230,7 @@ def main():
 
     summary["file"].close()
 
-    print(f"\ncheckpoint log: {os.path.relpath(log_path)}")
+    print(f"\nsteps log:      {os.path.relpath(log_path)}")
     print(f"summary:        {os.path.relpath(summary_path)}")
 
 

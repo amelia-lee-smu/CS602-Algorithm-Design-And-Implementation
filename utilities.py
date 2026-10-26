@@ -59,7 +59,7 @@ def is_feasible(routes, cust_demands, vehicle_capacity, num_vehicles):
     return True
 
 
-def check_and_update_new_best(routes, state):
+def check_and_update_new_best(routes, cust_demands, dist_matrix, vehicle_cap, num_vehicles, state):
     '''
     Called when a potentially better solution has been found, so that it can be updated. 
     1. Recompute the cost from the routes.
@@ -68,13 +68,13 @@ def check_and_update_new_best(routes, state):
     Returns the cost of routes.
     '''
     # recompute the cost from the routes
-    cost = calculate_cost(state["dist_matrix"], routes)
+    cost = calculate_cost(dist_matrix, routes)
 
     # save if new best
-    if cost < state["best_cost"] and is_feasible(routes, state["cust_demands"], state["vehicle_cap"], state["num_vehicles"]):
+    if cost < state["best_cost"] and is_feasible(routes, cust_demands, vehicle_cap, num_vehicles):
         best_routes = [route[:] for route in routes]   # copy, so later steps cannot change the saved routes
-        state["best_cost"] = cost                       # local copy: fast to compare against
-        state["best"]["solution"] = (cost, best_routes) # shared copy: what run_algo returns, in one write
+        state["best_cost"] = cost
+        state["best"]["solution"] = (cost, best_routes)
 
     # Note: there is no need to return state since python just updates the dict directly
     return cost
