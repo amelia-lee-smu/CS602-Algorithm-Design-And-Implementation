@@ -15,7 +15,10 @@ TIME_LIMIT_FRACTION = 0.95
 def find_solution(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
     # 1. Clarke-Wright savings: a fast first feasible solution
     # TODO: call the CW algo here and save its solution: best["solution"] = (cost, routes)
-
+    
+    cw_cost, cw_routes = run_clarke_wright(cust_demands, dist_matrix, vehicle_cap, num_vehicles)
+    best["solution"] = (cw_cost, cw_routes)
+    
     # 2. Route first, cluster second (RFCS): search for a better solution with the remaining time
     run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best)
 
