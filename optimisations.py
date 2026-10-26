@@ -525,7 +525,7 @@ def ruin(routes, nearest_neighbours, num_remove, rng):
     Removes a group of customers that are close together:
     a random customer, plus its nearest neighbours until num_remove customers are removed.
     Routes left with no customers are dropped. The input routes are not changed.
-    Returns (ruinedroutes, removed_customers)
+    Returns (ruined_routes, removed_customers)
     '''
     customers = [customer for route in routes for customer in route[1:-1]]
     first_removed = rng.choice(customers)

@@ -246,7 +246,7 @@ def run_rfcs(cust_demands, dist_matrix, vehicle_cap, num_vehicles, best):
             routes, method = partition_giant_tour(tour, cust_demands, dist_matrix, vehicle_cap,
                                                   num_vehicles, nearest_neighbours, rng, overload_penalty)
 
-            # no feasible routes from this tour: try a new tour if there is no solution yet,
+            # no feasible routes from this tour: try a new tour if there is no solution yet
             if routes is None or not is_feasible(routes, cust_demands, vehicle_cap, num_vehicles):
                 continue
 

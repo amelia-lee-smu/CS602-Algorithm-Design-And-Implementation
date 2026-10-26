@@ -62,10 +62,10 @@ def is_feasible(routes, cust_demands, vehicle_capacity, num_vehicles):
 def check_and_update_new_best(routes, state):
     '''
     Called when a potentially better solution has been found, so that it can be updated. 
-    1. Recompute the cost from the routes (calculate_cost in utilities)
+    1. Recompute the cost from the routes.
     2. If it is cheaper than the best so far, check it with is_feasible,
-       then save it to best["solution"] as one (cost, routes) write
-    Returns the cost of routes
+       then save it to best["solution"] as one (cost, routes) write.
+    Returns the cost of routes.
     '''
     # recompute the cost from the routes
     cost = calculate_cost(state["dist_matrix"], routes)
