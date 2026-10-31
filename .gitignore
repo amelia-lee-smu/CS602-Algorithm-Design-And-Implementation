@@ -10,3 +10,5 @@ __pycache__/
 logs/*
 !logs/summary_2026-10-30_08-10-40.csv
 !logs/steps_log_2026-10-30_08-10-40.csv
+!steps_log_2026-10-31_05-08-41.csv
+!summary_2026-10-31_05-08-41.csv
