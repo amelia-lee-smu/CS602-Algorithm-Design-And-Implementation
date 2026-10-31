@@ -173,7 +173,7 @@ def run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type
 
         # Terminate the process when the time limit is hit
         if process.is_alive():
-            print(f"Code terminated at {TIMEOUT} seconds.")
+            # print(f"Code terminated at {TIMEOUT} seconds.")
             process.terminate()  # Forces the process to close
             process.join()       # Cleans up the process resources
 
