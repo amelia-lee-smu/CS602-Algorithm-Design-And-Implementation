@@ -43,7 +43,6 @@ def build_nearest_neighbours(dist_matrix, num_neighbours=NUM_NEIGHBOURS):
     return nearest_neighbours
 
 
-# TODO: unchecked
 def starting_overload_penalty(cust_demands, dist_matrix):
     '''
     Finds the cost per unit of overload used by split_with_vehicle_overload and repair_overloads:
@@ -66,7 +65,6 @@ def starting_overload_penalty(cust_demands, dist_matrix):
 # ---------------------------------------------------------------------------
 # Packing by demand
 # ---------------------------------------------------------------------------
-# TODO: unchecked
 def pack_by_demand(cust_demands, dist_matrix, vehicle_cap, num_vehicles):
     '''
     Packs customers into at most num_vehicles routes by demand only:

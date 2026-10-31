@@ -1,7 +1,6 @@
 '''
-Improvement steps shared by Clarke-Wright and RFCS.
+Improvement steps shared by all 3 stages.
 '''
-# TODO: unchecked
 def two_opt(path, dist_matrix):
     '''
     Improves the order of a path by reversing segments, trying every pair of edges,
@@ -111,7 +110,6 @@ def optimised_two_opt(path, dist_matrix, nearest_neighbours):
 # ---------------------------------------------------------------------------
 # Swapping customers between routes
 # ---------------------------------------------------------------------------
-# TODO: unchecked
 def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng, penalty=None,
                       customers_to_check=None):
     '''
@@ -266,14 +264,12 @@ def relocate_and_swap(routes, cust_demands, dist_matrix, vehicle_cap, nearest_ne
     return [route for route in routes if len(route) > 2]    # drop routes left empty
 
 
-
 # ---------------------------------------------------------------------------
 # Partitioning of routes
 # ---------------------------------------------------------------------------
 MAX_OVERLOAD_FACTOR = 1.5    # split_with_vehicle_overload lets a route carry up to 1.5 x vehicle_cap
 MAX_PENALTY_DOUBLINGS = 5    # repair doubles the overload penalty at most 5 times before giving up
 
-# TODO: unchecked
 def split_within_vehicle_capacity(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles):
     '''
     Cuts the giant tour into at most num_vehicles routes at the lowest total cost, keeping the customers in tour order.
@@ -375,7 +371,6 @@ def split_within_vehicle_capacity(tour, cust_demands, dist_matrix, vehicle_cap, 
     return routes[::-1]
 
 
-# TODO: unchecked
 def split_with_vehicle_overload(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles, penalty):
     '''
     Cuts the giant tour into at most num_vehicles routes, keeping the customers in tour order.
@@ -448,7 +443,6 @@ def split_with_vehicle_overload(tour, cust_demands, dist_matrix, vehicle_cap, nu
     return routes[::-1]
 
 
-# TODO: unchecked
 def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_neighbours, rng,
                      penalty, max_doublings):
     '''
@@ -478,7 +472,6 @@ def repair_overloads(routes, cust_demands, dist_matrix, vehicle_cap, nearest_nei
     return None     # still overloaded after every doubling
 
 
-# TODO: unchecked
 def split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap, num_vehicles,
                                    nearest_neighbours, rng, penalty):
     '''
@@ -504,7 +497,6 @@ def split_with_overload_and_repair(tour, cust_demands, dist_matrix, vehicle_cap,
 # ---------------------------------------------------------------------------
 # Reducing the number of vehicles used
 # ---------------------------------------------------------------------------
-# TODO: unchecked
 def vehicle_reduction(routes, cust_demands, num_vehicles):
     '''
     Removes the lightest routes until only num_vehicles are left.
@@ -525,7 +517,6 @@ def vehicle_reduction(routes, cust_demands, num_vehicles):
     return kept_routes, removed_customers
 
 
-# TODO: unchecked
 def cheapest_insertion(routes, removed_customers, cust_demands, dist_matrix, vehicle_cap):
     '''
     Inserts each removed customer (biggest demand first) into the route where it causes the least overload,
@@ -562,7 +553,6 @@ def cheapest_insertion(routes, removed_customers, cust_demands, dist_matrix, veh
     return routes
 
 
-
 # ---------------------------------------------------------------------------
 # Ruin and recreate
 # ---------------------------------------------------------------------------
@@ -570,7 +560,6 @@ MIN_REMOVE = 5                      # ruin removes a random number of nearby cus
 MAX_REMOVE = 30                     # from MIN_REMOVE to min(MAX_REMOVE, num_customers // 4)
 
 
-# TODO: unchecked
 def ruin(routes, nearest_neighbours, num_remove, rng):
     '''
     Removes a group of customers that are close together:
@@ -591,7 +580,6 @@ def ruin(routes, nearest_neighbours, num_remove, rng):
     return ruined_routes, removed_customers
 
 
-# TODO: unchecked
 def recreate(routes, removed_customers, cust_demands, dist_matrix, vehicle_cap, num_vehicles, nearest_neighbours, rng):
     '''
     Puts the removed customers back one at a time (in random order), each at its cheapest spot, in a route that still has room:
