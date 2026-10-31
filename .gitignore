@@ -8,5 +8,5 @@ __pycache__/
 
 # Benchmark logs: ignore everything in logs/ except these sample files
 logs/*
-!logs/summary_2026-10-27_03-39-17.csv
-!logs/steps_log_2026-10-27_03-39-17.csv
+!logs/summary_2026-10-30_08-10-40.csv
+!logs/steps_log_2026-10-30_08-10-40.csv

@@ -125,12 +125,15 @@ def find_instances(sets, names):
     return instances
 
 
-def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, time_limits, log_info):
+def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, time_limits, log_info,
+                       optimal_cost=None):
     '''
     Runs final_solution.find_solution once (through test_case_logger, which logs each step),
     the same way run_algo does (separate process, shared best),
     and reads the best solution at TIME_LIMIT_FRACTION x each time limit.
-    The process is terminated after the last one.
+    The process is terminated after the last one, or as soon as a reading reaches optimal_cost:
+    the later time limits then get the same solution, read at TIME_LIMIT_FRACTION x their limit
+    (when the real solver would stop), so their scores match a full run.
     Returns [(time_limit, run_time, cost, routes, found_at, found_by)], one per time limit:
         run_time = seconds into the run when the best solution was read
         found_at = seconds into the run when that solution was first found (None if not known)
@@ -164,6 +167,13 @@ def run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles, tim
             else:
                 found_at = found_by = None
             snapshots.append((time_limit, run_time, cost, routes, found_at, found_by))
+
+            # optimal already reached: no later reading can be better, so stop the run here
+            if optimal_cost is not None and cost <= optimal_cost + 1e-6:
+                for later_limit in time_limits[len(snapshots):]:
+                    snapshots.append((later_limit, final_solution.TIME_LIMIT_FRACTION * later_limit,
+                                      cost, routes, found_at, found_by))
+                break
 
         if process.is_alive():
             process.terminate()
@@ -219,7 +229,7 @@ def main():
             continue
 
         snapshots = run_with_snapshots(cust_demands, dist_matrix, vehicle_cap, num_vehicles,
-                                       time_limits, log_info)
+                                       time_limits, log_info, optimal_cost)
         gap_texts = test_case_logger.write_summary_rows(summary, run_id, path.stem, cust_demands, dist_matrix,
                                                   vehicle_cap, num_vehicles, optimal_cost, snapshots)
 
