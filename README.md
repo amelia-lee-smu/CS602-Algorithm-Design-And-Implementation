@@ -1,6 +1,6 @@
 # CS602 Algorithm Design and Implementation (G2 - Group 5)
 
-[Final presentation slides](https://docs.google.com/presentation/d/1wnqwfYSPhZJwy0msSXpv69tcGVAU7V-l1JVBjTRq1Kw/edit)
+### [Final presentation slides](https://docs.google.com/presentation/d/1wnqwfYSPhZJwy0msSXpv69tcGVAU7V-l1JVBjTRq1Kw/edit)
 
 
 ## Setup
@@ -9,6 +9,23 @@
 conda env create -f environment.yml
 conda activate algo-design
 ```
+
+
+## Running the algorithm
+
+The algorithm is in `final_solution.py`. Call `run_algo`:
+
+```python
+run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type)
+```
+
+- `cust_demands`: list of demands, depot first (`[0, 2, 2, 3]`)
+- `dist_matrix`: list of rows of the distance matrix
+- `vehicle_cap`: capacity of each vehicle
+- `num_vehicles`: number of vehicles available
+- `instance_type`: `"SMALL"`, `"MEDIUM"` or `"LARGE"`. The run stops at 95% of the limit for the instance type.
+
+It returns `(best_cost, best_routes)`, where `best_routes` is a list of routes.
 
 
 ## Input and output format
