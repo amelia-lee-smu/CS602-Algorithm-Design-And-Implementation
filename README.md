@@ -1,5 +1,8 @@
 # CS602 Algorithm Design and Implementation (G2 - Group 5)
 
+[Final presentation slides](https://docs.google.com/presentation/d/1wnqwfYSPhZJwy0msSXpv69tcGVAU7V-l1JVBjTRq1Kw/edit)
+
+
 ## Setup
 
 ```bash
@@ -9,6 +12,30 @@ conda activate algo-design
 
 
 ## Input and output format
+
+### Input:
+
+Each instance is a plain text file with 4 parts, in this order:
+
+1. Instance type: small/medium/large
+2. Customer demands: on one line, separated by spaces. The first value is the depot (vertex `0`) and is always `0`.
+3. Distance matrix: one row per line, values separated by spaces. It is symmetric, and row/column `0` is the depot.
+4. Vehicle capacity
+5. number of vehicles
+
+Example:
+
+```
+SMALL 
+0 2 2 3
+0 2.5 5.6 6.0
+2.5 0 3.9 6.5
+5.6 3.9 0 5.2
+6.0 6.5 5.2 0
+5
+2
+```
+
 
 ### Output: 
 
@@ -21,34 +48,31 @@ The total cost on the first line, then one route per line, each starting and end
 ```
 
 
-## Algorithms
+## Our approach
 
-1. `route_first_cluster_second_solution.py` implements the **route first, cluster second** method from Beasley (1983): 
-   - Build a random giant tour through all customers (excluding the depot) and improve it with 2-opt.
-   - Partition the giant tour
-   - optimise each route using 3-opt
-   - (Note: multiple giant tours are created, to reduce the effect of having a bad random start)
+![Algorithm overview](images/algorithm_overview.png)
 
-2. `clarke_wright_solution.py` implements **Clarke-Wright savings + penalised local search**:
-   - Build routes with the Clarke-Wright savings algorithm.
-   - Cut the routes down to the number of vehicles (re-inserting customers; vehicles may become overloaded).
-   - Local search (relocate, swap, 2-opt*, 2-opt over each customer's 30 nearest neighbours) on `distance + penalty * overload`, doubling the penalty until no vehicle is overloaded (`PenalisedLocalSearch` in `optimisations.py`).
-   - If still infeasible, restart from a randomised Clarke-Wright.
-
-   ```bash
-   python clarke_wright_solution.py                                   # sample from the instructions
-   python clarke_wright_solution.py test_cases/benchmarks/A/A-n32-k5.txt [--time 10] [--seed 42] [--verbose]
-   ```
 
 ## Benchmarking
 
-`run_benchmarks.py` runs a solver on `test_cases/benchmarks`, checks feasibility and scores it against the `*_opt.txt` best-known solutions with `utilities.score`:
+`run_benchmarks.py` runs `final_solution.py` on the instances in `test_cases/benchmarks` (sets A, B, P and X), checks that each solution is feasible, and compares its cost with the optimal cost in the matching `*_opt.txt` file.
 
 ```bash
-python run_benchmarks.py --sets A B --time 5        # quick check, 5 s cap per instance
-python run_benchmarks.py --sets X --csv results.csv  # full time budget, save results
+python run_benchmarks.py                                  # every instance (about 3 min each)
+python run_benchmarks.py --sets A B                       # only sets A and B
+python run_benchmarks.py --sets X --limit 5               # the 5 smallest instances of set X
+python run_benchmarks.py --instances A-n32-k5 X-n101-k25  # chosen instances
+python run_benchmarks.py --limits 10 20 30                # quick check with shorter limits
 ```
 
-To add another algorithm, expose `solve(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, time_limit) -> (cost, routes)` and register it in `SOLVERS`.
+Results are saved in `logs/`, and used to select the final test cases for submission. 
 
-Size classes (small / medium / large) are set by `utilities.size_class`; the thresholds are a guess until the course defines them.
+
+
+
+## Team members
+- Andrew Ho
+- Amelia Lee
+- Li Song Xi
+- Oh Rui Han
+- Peng You Yun
