@@ -223,7 +223,7 @@ def main():
         # skip instances that can never be solved: log why, and do not run the solver
         impossible = instance_infeasibility(cust_demands, vehicle_cap, num_vehicles)
         if impossible:
-            test_case_logger.write_skipped_instance(summary, log_info, run_id, path.stem, num_customers, num_vehicles,
+            test_case_logger.write_skipped_instance(summary, log_info, run_id, path.stem, num_customers, num_vehicles, vehicle_cap,
                                               optimal_cost, time_limits, impossible)
             print(f"{path.stem:<16}{str(optimal_cost):>10}  skipped, instance infeasible: {impossible}")
             continue

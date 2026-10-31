@@ -148,6 +148,7 @@ SUMMARY_COLUMNS = [
     "instance",       # test case name, e.g. A-n32-k5
     "num_customers",
     "num_vehicles",
+    "vehicle_cap",
     "time_limit_s",   # the time limit this row is for (30 / 60 / 180)
     "best_found_s",   # seconds into the run when this best solution was first found
     "best_found_by",  # which algorithm found it: packing / clarke_wright / rfcs
@@ -203,7 +204,7 @@ def write_summary_rows(summary, run_id, instance, cust_demands, dist_matrix, veh
         gap_pct = 100 * (cost - optimal_cost) / optimal_cost if feasible and optimal_cost else None
         score = project_score(run_time, time_limit, cost, optimal_cost) if feasible and optimal_cost else 0
 
-        summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, f"{time_limit:g}",
+        summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, vehicle_cap, f"{time_limit:g}",
                                     f"{found_at:.3f}" if feasible and found_at is not None else "",
                                     found_by if feasible and found_by is not None else "",
                                     f"{cost:.2f}" if feasible else "",
@@ -218,7 +219,7 @@ def write_summary_rows(summary, run_id, instance, cust_demands, dist_matrix, veh
     return gap_texts
 
 
-def write_skipped_instance(summary, log_info, run_id, instance, num_customers, num_vehicles,
+def write_skipped_instance(summary, log_info, run_id, instance, num_customers, num_vehicles, vehicle_cap,
                            optimal_cost, time_limits, reason):
     '''
     For an instance that can never be solved (so the solver was not run):
@@ -229,7 +230,7 @@ def write_skipped_instance(summary, log_info, run_id, instance, num_customers, n
     log["file"].close()
 
     for time_limit in time_limits:
-        summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, f"{time_limit:g}",
+        summary["writer"].writerow([run_id, instance, num_customers, num_vehicles, vehicle_cap, f"{time_limit:g}",
                                     "0.00", "", "", optimal_cost if optimal_cost is not None else "",
                                     "", "no", "0.000"])
     summary["file"].flush()
