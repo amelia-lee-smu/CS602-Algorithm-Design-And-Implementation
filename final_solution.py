@@ -180,16 +180,3 @@ def run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type
         best_cost, best_routes = best["solution"]
 
     return best_cost, best_routes
-
-
-# if __name__ == "__main__":
-#     from test_cases.sample_from_instructions import (
-#         cust_demands,
-#         dist_matrix,
-#         vehicle_capacity,
-#         num_vehicles,
-#     )
-
-#     best_cost, best_routes = run_algo(cust_demands, dist_matrix, vehicle_capacity, num_vehicles, "small")
-#     print(best_cost)
-#     print(best_routes)

@@ -15,8 +15,8 @@ Output (printed, and written to --output if given):
     0 2 3 0
 
 Usage (from the project folder):
-    python solve.py grp5_small.txt
-    python solve.py grp5_small.txt --output grp5_small_solution.txt
+    python submission_test_cases/solve.py grp5_small.txt
+    python submission_test_cases/solve.py grp5_small.txt --output submission_test_cases/grp5_small_solution.txt
 '''
 
 import argparse
@@ -33,13 +33,15 @@ def to_number(text):
 def read_instance(path):
     '''
     Reads an instance file: instance type, demands, distance matrix, capacity, vehicles.
-    Capacity and vehicles may be labelled ("Capacity: 5") or plain numbers ("5").
+    The instance type may be in any case ("small", "SMALL", "Small").
+    Capacity and vehicles may be labelled with a colon in any case ("Capacity: 5", "CAPACITY:5") or plain numbers ("5").
     Returns (instance_type, cust_demands, dist_matrix, vehicle_cap, num_vehicles)
     '''
     with open(path) as instance_file:
         lines = [line.strip() for line in instance_file if line.strip()]
 
-    instance_type = lines[0].lower()
+    # first word only, any case, without punctuation: "SMALL", "Small", "small:", "Small instance" -> "small"
+    instance_type = lines[0].split()[0].strip(":=,.").lower()
     if instance_type not in TIME_LIMITS:
         raise ValueError(f"{path}: first line should be one of {list(TIME_LIMITS)}, got '{lines[0]}'")
 
@@ -49,7 +51,7 @@ def read_instance(path):
         label = line.lower()
         if label.startswith("capacity"):
             vehicle_cap = to_number(line.split(":")[1])
-        elif label.startswith("vehicles"):
+        elif label.startswith("vehicle"):
             num_vehicles = int(line.split(":")[1])
         else:
             number_rows.append([to_number(value) for value in line.split()])

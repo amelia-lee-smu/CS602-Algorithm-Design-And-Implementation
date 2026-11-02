@@ -17,13 +17,8 @@ Run `solve.py` on an instance file:
 
 ```bash
 python solve.py submission_test_cases/grp5_small.txt
-python solve.py submission_test_cases/grp5_small.txt --output grp5_small_sol.txt
+python solve.py submission_test_cases/grp5_small.txt --output grp5_small_sol.txt    # save output to file
 ```
-
-It prints the solution in the output format below, and also writes it to the `--output` file if one is given.
-The time limit comes from the instance type on the first line of the file: `small`, `medium` or `large` stops at 28.5, 57 or 171 s.
-
-On macOS, use `python3` if `python` is not found. Use forward slashes (`/`) in paths on every OS.
 
 ### Calling the solver from Python
 
@@ -46,13 +41,13 @@ It returns `(best_cost, best_routes)`, where `best_routes` is a list of routes.
 
 ### Input:
 
-Each instance is a plain text file with 4 parts, in this order:
+Each instance is a plain text file with 5 parts, in this order:
 
-1. Instance type: small/medium/large
+1. Instance type: `small`, `medium` or `large` (any case)
 2. Customer demands: on one line, separated by spaces. The first value is the depot (vertex `0`) and is always `0`.
 3. Distance matrix: one row per line, values separated by spaces. It is symmetric, and row/column `0` is the depot.
-4. Vehicle capacity
-5. number of vehicles
+4. Vehicle capacity, as `Capacity: <value>`
+5. Number of vehicles, as `Vehicles: <value>`
 
 Example:
 
@@ -70,13 +65,34 @@ Vehicles: 2
 
 ### Output: 
 
-The total cost on the first line, then one route per line, each starting and ending at the depot (`0`):
+The total cost on the first line (to 6 decimal places), then one route per line, each starting and ending at the depot (`0`):
 
 ```
-21.8
+21.800000
 0 1 0
-0 2 3 0
+0 3 2 0
 ```
+
+
+## Submitted test cases
+
+The 3 instances we are submitting are in `submission_test_cases/`:
+
+| File | Type (time limit) | Customers | Vehicles | Capacity | Total demand | Tightness | Source |
+|---|---|---|---|---|---|---|---|
+| [`grp5_small.txt`](submission_test_cases/grp5_small.txt) | small (30 s) | 360 | 120 | 20 | 2,400 | 100.00% | made by our group (CW-trap-n361-k120) |
+| [`grp5_medium.txt`](submission_test_cases/grp5_medium.txt) | medium (60 s) | 375 | 94 | 4 | 375 | 99.73% | X-n376-k94 (Uchoa et al., 2017) |
+| [`grp5_large.txt`](submission_test_cases/grp5_large.txt) | large (180 s) | 654 | 131 | 5 | 654 | 99.85% | X-n655-k131 (Uchoa et al., 2017) |
+
+Tightness = total demand ÷ (vehicles × capacity). Close to 100% means almost every vehicle must be full.
+
+Our solver's results on them:
+
+| File | Cost | Gap from optimal | Best found at |
+|---|---|---|---|
+| `grp5_small.txt` | 24,000,000 | 0.00% | 0.38 s |
+| `grp5_medium.txt` | 147,766 | 0.04% | 45.54 s |
+| `grp5_large.txt` | 107,035 | 0.24% | 61.30 s |
 
 
 ## Our approach
@@ -96,9 +112,7 @@ python run_benchmarks.py --instances A-n32-k5 X-n101-k25  # chosen instances
 python run_benchmarks.py --limits 10 20 30                # quick check with shorter limits
 ```
 
-Results are saved in `logs/`, and used to select the final test cases for submission. 
-
-
+Results are saved in `logs/`, and used to select the final test cases for submission.
 
 
 ## Team members
