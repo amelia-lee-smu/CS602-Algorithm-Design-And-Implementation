@@ -1,0 +1,5 @@
+# solve.py and the solver only need Python 3 (standard library).
+# These packages are only needed for the notebooks in notebooks/.
+pandas
+matplotlib
+ipykernel
