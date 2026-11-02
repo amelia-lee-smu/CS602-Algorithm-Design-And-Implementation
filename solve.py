@@ -69,10 +69,10 @@ def read_instance(path):
 
 
 def format_cost(cost):
-    '''21.8 -> "21.8", 1016.0 -> "1016", 21.80000001 -> "21.8" (rounded to 2 decimal places)'''
-    if cost == int(cost):
-        return str(int(cost))
-    return f"{cost:.2f}".rstrip("0").rstrip(".")
+    '''Total cost to 6 decimal places, e.g. 21.8 -> "21.800000", 24000000 -> "24000000.000000"'''
+    # if cost == int(cost):
+    #     return str(int(cost))
+    return f"{cost:.6f}"
 
 
 def format_solution(cost, routes):
