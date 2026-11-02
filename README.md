@@ -13,6 +13,20 @@ conda activate algo-design
 
 ## Running the algorithm
 
+Run `solve.py` on an instance file:
+
+```bash
+python solve.py submission_test_cases/grp5_small.txt
+python solve.py submission_test_cases/grp5_small.txt --output grp5_small_sol.txt
+```
+
+It prints the solution in the output format below, and also writes it to the `--output` file if one is given.
+The time limit comes from the instance type on the first line of the file: `small`, `medium` or `large` stops at 28.5, 57 or 171 s.
+
+On macOS, use `python3` if `python` is not found. Use forward slashes (`/`) in paths on every OS.
+
+### Calling the solver from Python
+
 The algorithm is in `final_solution.py`. Call `run_algo`:
 
 ```python
@@ -23,7 +37,7 @@ run_algo(cust_demands, dist_matrix, vehicle_cap, num_vehicles, instance_type)
 - `dist_matrix`: list of rows of the distance matrix
 - `vehicle_cap`: capacity of each vehicle
 - `num_vehicles`: number of vehicles available
-- `instance_type`: `"SMALL"`, `"MEDIUM"` or `"LARGE"`. The run stops at 95% of the limit for the instance type.
+- `instance_type`: `"small"`, `"medium"` or `"large"` (lowercase). The run stops at 95% of the time limit for that type (30 / 60 / 180 s).
 
 It returns `(best_cost, best_routes)`, where `best_routes` is a list of routes.
 
@@ -43,14 +57,14 @@ Each instance is a plain text file with 4 parts, in this order:
 Example:
 
 ```
-SMALL 
+small
 0 2 2 3
 0 2.5 5.6 6.0
 2.5 0 3.9 6.5
 5.6 3.9 0 5.2
 6.0 6.5 5.2 0
-5
-2
+Capacity: 5
+Vehicles: 2
 ```
 
 
